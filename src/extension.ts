@@ -22,7 +22,17 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(disposable);
 
 	let disposableDiffGraph = vscode.commands.registerCommand('diffGraph.generate', () => {
-		vscode.window.showInformationMessage('DiffGraph Generate command executed!');
+		// Create and show a new webview panel
+		const panel = vscode.window.createWebviewPanel(
+			'diffGraph', // Identifies the type of the webview. Used internally
+			'DiffGraph', // Title of the panel displayed to the user
+			vscode.ViewColumn.Beside, // Editor column to show the new webview panel in.
+			{
+				enableScripts: false // No scripts needed for placeholder
+			}
+		);
+		// Set placeholder HTML content
+		panel.webview.html = '<h1>Generating DiffGraph...</h1>';
 	});
 	context.subscriptions.push(disposableDiffGraph);
 }

@@ -28,11 +28,48 @@ export function activate(context: vscode.ExtensionContext) {
 			'DiffGraph', // Title of the panel displayed to the user
 			vscode.ViewColumn.Beside, // Editor column to show the new webview panel in.
 			{
-				enableScripts: false // No scripts needed for placeholder
+				enableScripts: true // Enable scripts for mermaid rendering
 			}
 		);
-		// Set placeholder HTML content
-		panel.webview.html = '<h1>Generating DiffGraph...</h1>';
+		// Set placeholder HTML content with a mermaid diagram
+		panel.webview.html = `
+			<html>
+			<head>
+				<script type="module">
+					import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.esm.min.mjs';
+					mermaid.initialize({
+						startOnLoad: true,
+						themeVariables: {
+							edgeLabelBackground: '#222',
+							arrowheadColor: '#fff',
+							lineColor: '#fff'
+						}
+					});
+				</script>
+				<style>
+					body { font-family: sans-serif; margin: 0; padding: 1.5em; }
+					h1 { color: #2d5fa4; }
+					.mermaid { border-radius: 8px; padding: 1em; box-shadow: 0 2px 8px #0001; }
+					.mermaid .edgePath path,
+					.mermaid .arrowheadPath {
+						stroke: #fff !important;
+						fill: #fff !important;
+					}
+				</style>
+			</head>
+			<body>
+				<h1>Generating DiffGraph...</h1>
+				<div class="mermaid">
+					graph TD
+					  A[main.ts] --> B[utils.ts]
+					  A --> C[api.ts]
+					  B --> D[logger.ts]
+					  C --> D
+					  D --> E[config.ts]
+				</div>
+			</body>
+			</html>
+		`;
 	});
 	context.subscriptions.push(disposableDiffGraph);
 }

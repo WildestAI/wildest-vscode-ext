@@ -18,6 +18,10 @@
       {
         "command": "deeproots.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "diffGraph.generate",
+        "title": "Generate DiffGraph"
       }
     ]
   },

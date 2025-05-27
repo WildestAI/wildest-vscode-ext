@@ -20,7 +20,12 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	context.subscriptions.push(disposable);
+
+	let disposableDiffGraph = vscode.commands.registerCommand('diffGraph.generate', () => {
+		vscode.window.showInformationMessage('DiffGraph Generate command executed!');
+	});
+	context.subscriptions.push(disposableDiffGraph);
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() { }

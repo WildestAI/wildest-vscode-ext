@@ -6,7 +6,7 @@
    - ✅ Completed: VSCode extension project initialized with TypeScript and esbuild. Basic scripts set up. Extension compiles and activates.
 
 2. **Command Registration**
-   - ⬜ Not Started: No `diffGraph.generate` command registered in `extension.ts` or `package.json`.
+   - ✅ Completed: `diffGraph.generate` command registered in `extension.ts` and added to `package.json`. Command appears in the Command Palette and shows an information message when executed.
 
 3. **Basic Webview Panel Creation**
    - ⬜ Not Started: No logic for creating/showing a `vscode.WebviewPanel` yet.
@@ -23,7 +23,7 @@
 ---
 
 ## Summary
-- **Current Progress:** Only Step 1 of Phase 1 is complete (project setup, scripts, build system).
-- **Next Step:** Register the `diffGraph.generate` command and add it to the Command Palette.
+- **Current Progress:** Steps 1 and 2 of Phase 1 are complete (project setup, scripts, build system, and command registration).
+- **Next Step:** Implement logic for creating and showing a WebviewPanel in the command handler.
 
 _This status is based on the Product Roadmap as of 27 May 2025._

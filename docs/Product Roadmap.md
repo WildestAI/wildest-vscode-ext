@@ -24,20 +24,18 @@
         * Get access to the Git extension using `vscode.extensions.getExtension('vscode.git')`.
         * Once activated, access its `API` object.
         * Call methods on the Git API to get `Repository` objects.
-        * **Initial scope:** Focus on getting the diff for **unstaged changes** or **staged changes** (e.g., `repository.diffWorkingTree()` or `repository.diffIndex()`).
-    * Log the *raw Git diff output* (the unified diff format) to the VSCode output channel for verification.
-    * **Test:** Make unstaged/staged changes, run the command, and verify the raw diff output is correctly retrieved.
+        * **Update:** The extension should only provide the repository path to the CLI tool. The Rust CLI is responsible for all git operations and diff calculation. The extension does not calculate or pass a diff itself.
+    * Log the *repository path* and CLI command to the VSCode output channel for verification.
+    * **Test:** Run the command and verify the CLI is invoked with the correct environment variables and repository path.
 
 5.  **Execute External DiffGraph CLI Tool:**
     * **Prerequisite:** Assume the `diffgraph-cli` tool is installed and accessible in the user's `PATH`.
     * Use Node.js's `child_process.exec` or `child_process.spawn` to execute the `diffgraph-cli` command.
-    * Pass the raw Git diff content (from step 4) as input to the CLI tool. This might involve:
-        * Writing the diff content to a temporary file, and passing the file path as an argument.
-        * Passing the diff content directly via standard input (stdin) if the CLI tool supports it. (Preferred for simplicity if supported).
+    * Pass the repository path and output directory via environment variables (GIT_DIR, OUTPUT_PATH, LINK_URL). Do not calculate or pass a diff from the extension.
     * Specify an output path for the generated HTML file (e.g., a temporary file in the user's OS temp directory).
     * Log the CLI command being executed and any output/errors from the CLI.
     * **Test:**
-        * Create a dummy `diffgraph-cli` script locally (e.g., a simple Python script that takes diff input and writes a basic "Hello DiffGraph" HTML to a temp file).
+        * Create a dummy `diffgraph-cli` script locally (e.g., a simple Rust or Python script that generates a basic HTML file).
         * Verify your extension successfully calls this dummy CLI and creates the HTML file.
 
 6.  **Load Generated HTML into Webview:**

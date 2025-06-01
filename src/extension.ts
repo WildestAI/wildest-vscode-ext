@@ -1,6 +1,10 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import * as cp from 'child_process';
+import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -21,7 +25,63 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(disposable);
 
-	let disposableDiffGraph = vscode.commands.registerCommand('diffGraph.generate', () => {
+	let disposableDiffGraph = vscode.commands.registerCommand('diffGraph.generate', async () => {
+		// Access the Git extension
+		const gitExtension = vscode.extensions.getExtension('vscode.git');
+		if (!gitExtension) {
+			vscode.window.showErrorMessage('Git extension not found. Please ensure Git is enabled in VS Code.');
+			return;
+		}
+		const git = gitExtension.isActive ? gitExtension.exports.getAPI(1) : (await gitExtension.activate()).getAPI(1);
+		if (!git || !git.repositories || git.repositories.length === 0) {
+			vscode.window.showErrorMessage('No Git repositories found in the workspace.');
+			return;
+		}
+		// Use the first repository for now
+		const repository = git.repositories[0];
+		const repoRoot = repository.rootUri.fsPath;
+		const tmpDir = os.tmpdir();
+		const outputDir = tmpDir;
+		const htmlFileName = `diffgraph-output-${Date.now()}.html`;
+		const htmlFilePath = path.join(outputDir, htmlFileName);
+
+		// Set up environment variables for the CLI
+		const env = Object.assign({}, process.env, {
+			GIT_DIR: repoRoot,
+			OUTPUT_PATH: outputDir,
+			LINK_URL: 'vscode://file/' // VSCode file URI prefix for navigation
+		});
+
+		// Build the CLI command (no commit ids for unstaged changes)
+		const cliCmd = `diffgraph-cli --output ${htmlFileName}`;
+		let cliStdout = '', cliStderr = '';
+		const outputChannel = vscode.window.createOutputChannel('DiffGraph');
+		try {
+			await new Promise((resolve, reject) => {
+				cp.exec(cliCmd, { env }, (error: any, stdout: string, stderr: string) => {
+					cliStdout = stdout;
+					cliStderr = stderr;
+					if (error) {
+						reject(error);
+					} else {
+						resolve(undefined);
+					}
+				});
+			});
+		} catch (err) {
+			vscode.window.showErrorMessage(`diffgraph-cli failed: ${err}\n${cliStderr}`);
+			return;
+		}
+		// Log CLI command and output/errors
+		outputChannel.appendLine(`Executed: ${cliCmd}`);
+		outputChannel.appendLine('CLI stdout:');
+		outputChannel.appendLine(cliStdout);
+		if (cliStderr) {
+			outputChannel.appendLine('CLI stderr:');
+			outputChannel.appendLine(cliStderr);
+		}
+		outputChannel.show(true);
+
 		// Create and show a new webview panel
 		const panel = vscode.window.createWebviewPanel(
 			'diffGraph', // Identifies the type of the webview. Used internally

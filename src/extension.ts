@@ -53,85 +53,93 @@ export function activate(context: vscode.ExtensionContext) {
 			VIRTUAL_ENV: venvPath
 		});
 		const cliCmd = `echo $(pwd); diffgraph-ai --output ${htmlFileName} --no-open`;
-		let cliStdout = '', cliStderr = '';
-		const outputChannel = vscode.window.createOutputChannel('DiffGraph');
-		try {
-			await new Promise((resolve, reject) => {
-				// Use zsh as a login shell to better match manual testing
-				cp.exec(`zsh -l -c '${cliCmd.replace(/'/g, "'\\''")}'`, { cwd: repoRoot, env }, (error: any, stdout: string, stderr: string) => {
-					cliStdout = stdout;
-					cliStderr = stderr;
-					if (error) {
-						reject(error);
-					} else {
-						resolve(undefined);
-					}
-				});
-			});
-		} catch (err) {
-			vscode.window.showInformationMessage(`output: ${cliStdout}`);
-			vscode.window.showErrorMessage(`diffgraph-ai failed: ${err}`);
-			vscode.window.showWarningMessage(`error: ${cliStderr}`);
-			return;
-		}
-		// Log CLI command and output/errors
-		outputChannel.appendLine(`Executed: ${cliCmd}`);
-		outputChannel.appendLine('CLI stdout:');
-		outputChannel.appendLine(cliStdout);
-		if (cliStderr) {
-			outputChannel.appendLine('CLI stderr:');
-			outputChannel.appendLine(cliStderr);
-		}
-		outputChannel.show(true);
 
-		// Create and show a new webview panel
-		const panel = vscode.window.createWebviewPanel(
-			'diffGraph', // Identifies the type of the webview. Used internally
-			'DiffGraph', // Title of the panel displayed to the user
-			vscode.ViewColumn.Beside, // Editor column to show the new webview panel in.
-			{
-				enableScripts: true // Enable scripts for mermaid rendering
-			}
-		);
-		// Set placeholder HTML content with a mermaid diagram
-		panel.webview.html = `
-			<html>
-			<head>
-				<script type="module">
-					import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.esm.min.mjs';
-					mermaid.initialize({
-						startOnLoad: true,
-						themeVariables: {
-							edgeLabelBackground: '#222',
-							arrowheadColor: '#fff',
-							lineColor: '#fff'
+		// Show a progress notification while the CLI runs
+		await vscode.window.withProgress({
+			location: vscode.ProgressLocation.Notification,
+			title: 'Generating DiffGraph... (this may take several minutes)',
+			cancellable: false
+		}, async (progress) => {
+			let cliStdout = '', cliStderr = '';
+			const outputChannel = vscode.window.createOutputChannel('DiffGraph');
+			try {
+				await new Promise((resolve, reject) => {
+					// Use zsh as a login shell to better match manual testing
+					cp.exec(`zsh -l -c '${cliCmd.replace(/'/g, "'\\''")}'`, { cwd: repoRoot, env }, (error: any, stdout: string, stderr: string) => {
+						cliStdout = stdout;
+						cliStderr = stderr;
+						if (error) {
+							reject(error);
+						} else {
+							resolve(undefined);
 						}
 					});
-				</script>
-				<style>
-					body { font-family: sans-serif; margin: 0; padding: 1.5em; }
-					h1 { color: #2d5fa4; }
-					.mermaid { border-radius: 8px; padding: 1em; box-shadow: 0 2px 8px #0001; }
-					.mermaid .edgePath path,
-					.mermaid .arrowheadPath {
-						stroke: #fff !important;
-						fill: #fff !important;
-					}
-				</style>
-			</head>
-			<body>
-				<h1>Generating DiffGraph...</h1>
-				<div class="mermaid">
-					graph TD
-					  A[main.ts] --> B[utils.ts]
-					  A --> C[api.ts]
-					  B --> D[logger.ts]
-					  C --> D
-					  D --> E[config.ts]
-				</div>
-			</body>
-			</html>
-		`;
+				});
+			} catch (err) {
+				vscode.window.showInformationMessage(`output: ${cliStdout}`);
+				vscode.window.showErrorMessage(`diffgraph-ai failed: ${err}`);
+				vscode.window.showWarningMessage(`error: ${cliStderr}`);
+				return;
+			}
+			// Log CLI command and output/errors
+			outputChannel.appendLine(`Executed: ${cliCmd}`);
+			outputChannel.appendLine('CLI stdout:');
+			outputChannel.appendLine(cliStdout);
+			if (cliStderr) {
+				outputChannel.appendLine('CLI stderr:');
+				outputChannel.appendLine(cliStderr);
+			}
+			outputChannel.show(true);
+
+			// Create and show a new webview panel
+			const panel = vscode.window.createWebviewPanel(
+				'diffGraph',
+				'DiffGraph',
+				vscode.ViewColumn.Beside,
+				{
+					enableScripts: true
+				}
+			);
+			// Set placeholder HTML content with a mermaid diagram
+			panel.webview.html = `
+				<html>
+				<head>
+					<script type="module">
+						import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.esm.min.mjs';
+						mermaid.initialize({
+							startOnLoad: true,
+							themeVariables: {
+								edgeLabelBackground: '#222',
+								arrowheadColor: '#fff',
+								lineColor: '#fff'
+							}
+						});
+					</script>
+					<style>
+						body { font-family: sans-serif; margin: 0; padding: 1.5em; }
+						h1 { color: #2d5fa4; }
+						.mermaid { border-radius: 8px; padding: 1em; box-shadow: 0 2px 8px #0001; }
+						.mermaid .edgePath path,
+						.mermaid .arrowheadPath {
+							stroke: #fff !important;
+							fill: #fff !important;
+						}
+					</style>
+				</head>
+				<body>
+					<h1>Generating DiffGraph...</h1>
+					<div class="mermaid">
+						graph TD
+						  A[main.ts] --> B[utils.ts]
+						  A --> C[api.ts]
+						  B --> D[logger.ts]
+						  C --> D
+						  D --> E[config.ts]
+					</div>
+				</body>
+				</html>
+			`;
+		});
 	});
 	context.subscriptions.push(disposableDiffGraph);
 }

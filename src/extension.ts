@@ -45,20 +45,20 @@ export function activate(context: vscode.ExtensionContext) {
 		const htmlFileName = `diffgraph-output-${Date.now()}.html`;
 		const htmlFilePath = path.join(outputDir, htmlFileName);
 
-		// Set up environment variables for the CLI
+		// Restore .venv/bin to PATH for developer-mode CLI
+		const venvPath = '/Users/apple/Work/wildest/DiffGraph-CLI/.venv';
+		const venvBin = path.join(venvPath, 'bin');
 		const env = Object.assign({}, process.env, {
-			GIT_DIR: repoRoot,
-			OUTPUT_PATH: outputDir,
-			LINK_URL: 'vscode://file/' // VSCode file URI prefix for navigation
+			PATH: `${venvBin}:${process.env.PATH}`,
+			VIRTUAL_ENV: venvPath
 		});
-
-		// Build the CLI command (no commit ids for unstaged changes)
-		const cliCmd = `diffgraph-cli --output ${htmlFileName}`;
+		const cliCmd = `echo $(pwd); diffgraph-ai --output ${htmlFileName} --no-open`;
 		let cliStdout = '', cliStderr = '';
 		const outputChannel = vscode.window.createOutputChannel('DiffGraph');
 		try {
 			await new Promise((resolve, reject) => {
-				cp.exec(cliCmd, { env }, (error: any, stdout: string, stderr: string) => {
+				// Use zsh as a login shell to better match manual testing
+				cp.exec(`zsh -l -c '${cliCmd.replace(/'/g, "'\\''")}'`, { cwd: repoRoot, env }, (error: any, stdout: string, stderr: string) => {
 					cliStdout = stdout;
 					cliStderr = stderr;
 					if (error) {
@@ -69,7 +69,9 @@ export function activate(context: vscode.ExtensionContext) {
 				});
 			});
 		} catch (err) {
-			vscode.window.showErrorMessage(`diffgraph-cli failed: ${err}\n${cliStderr}`);
+			vscode.window.showInformationMessage(`output: ${cliStdout}`);
+			vscode.window.showErrorMessage(`diffgraph-ai failed: ${err}`);
+			vscode.window.showWarningMessage(`error: ${cliStderr}`);
 			return;
 		}
 		// Log CLI command and output/errors

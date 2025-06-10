@@ -52,7 +52,7 @@ export function activate(context: vscode.ExtensionContext) {
 			PATH: `${venvBin}:${process.env.PATH}`,
 			VIRTUAL_ENV: venvPath
 		});
-		const cliCmd = `echo $(pwd); diffgraph-ai --output ${htmlFileName} --no-open`;
+		const cliCmd = `echo $(pwd); diffgraph-ai --output '${htmlFilePath}' --no-open`;
 
 		// Show a progress notification while the CLI runs
 		await vscode.window.withProgress({
@@ -100,45 +100,14 @@ export function activate(context: vscode.ExtensionContext) {
 					enableScripts: true
 				}
 			);
-			// Set placeholder HTML content with a mermaid diagram
-			panel.webview.html = `
-				<html>
-				<head>
-					<script type="module">
-						import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.esm.min.mjs';
-						mermaid.initialize({
-							startOnLoad: true,
-							themeVariables: {
-								edgeLabelBackground: '#222',
-								arrowheadColor: '#fff',
-								lineColor: '#fff'
-							}
-						});
-					</script>
-					<style>
-						body { font-family: sans-serif; margin: 0; padding: 1.5em; }
-						h1 { color: #2d5fa4; }
-						.mermaid { border-radius: 8px; padding: 1em; box-shadow: 0 2px 8px #0001; }
-						.mermaid .edgePath path,
-						.mermaid .arrowheadPath {
-							stroke: #fff !important;
-							fill: #fff !important;
-						}
-					</style>
-				</head>
-				<body>
-					<h1>Generating DiffGraph...</h1>
-					<div class="mermaid">
-						graph TD
-						  A[main.ts] --> B[utils.ts]
-						  A --> C[api.ts]
-						  B --> D[logger.ts]
-						  C --> D
-						  D --> E[config.ts]
-					</div>
-				</body>
-				</html>
-			`;
+			// Read the generated HTML file and show its contents in the webview
+			let htmlContent = '';
+			try {
+				htmlContent = fs.readFileSync(htmlFilePath, 'utf8');
+			} catch (e) {
+				htmlContent = `<html><body><h1>Error loading DiffGraph output</h1><pre>${e}</pre></body></html>`;
+			}
+			panel.webview.html = htmlContent;
 		});
 	});
 	context.subscriptions.push(disposableDiffGraph);

@@ -105,6 +105,18 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			outputChannel.show(true);
 
+			// macOS native notification
+			if (process.platform === 'darwin') {
+				const repoName = path.basename(repoRoot);
+				cp.exec(`terminal-notifier \
+					-title "Wildest AI" \
+					-subtitle "DiffGraph generation complete for ${repoName}" \
+					-message "Click to return to the app." \
+					-activate "com.microsoft.VSCode" \
+					-group "diffgraph-done"
+				`);
+			}
+
 			// Create and show a new webview panel
 			const panel = vscode.window.createWebviewPanel(
 				'diffGraph',

@@ -62,6 +62,17 @@ export function activate(context: vscode.ExtensionContext) {
 		}, async (progress) => {
 			let cliStdout = '', cliStderr = '';
 			const outputChannel = vscode.window.createOutputChannel('DiffGraph');
+
+			// Stopwatch logic
+			const startTime = Date.now();
+			let interval: NodeJS.Timeout | undefined = undefined;
+			interval = setInterval(() => {
+				const elapsed = Math.floor((Date.now() - startTime) / 1000);
+				const mins = Math.floor(elapsed / 60);
+				const secs = elapsed % 60;
+				progress.report({ message: `Elapsed: ${mins}:${secs.toString().padStart(2, '0')}` });
+			}, 1000);
+
 			try {
 				await new Promise((resolve, reject) => {
 					// Use zsh as a login shell to better match manual testing
@@ -76,11 +87,14 @@ export function activate(context: vscode.ExtensionContext) {
 					});
 				});
 			} catch (err) {
+				if (interval) { clearInterval(interval); }
 				vscode.window.showInformationMessage(`output: ${cliStdout}`);
 				vscode.window.showErrorMessage(`diffgraph-ai failed: ${err}`);
 				vscode.window.showWarningMessage(`error: ${cliStderr}`);
 				return;
 			}
+			if (interval) { clearInterval(interval); }
+
 			// Log CLI command and output/errors
 			outputChannel.appendLine(`Executed: ${cliCmd}`);
 			outputChannel.appendLine('CLI stdout:');

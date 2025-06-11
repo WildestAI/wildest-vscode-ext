@@ -66,21 +66,46 @@ export function activate(context: vscode.ExtensionContext) {
 			// Stopwatch logic
 			const startTime = Date.now();
 			let interval: NodeJS.Timeout | undefined = undefined;
+			let lastCliLine = '';
 			interval = setInterval(() => {
 				const elapsed = Math.floor((Date.now() - startTime) / 1000);
 				const mins = Math.floor(elapsed / 60);
 				const secs = elapsed % 60;
-				progress.report({ message: `Elapsed: ${mins}:${secs.toString().padStart(2, '0')}` });
+				const elapsedStr = `Elapsed: ${mins}:${secs.toString().padStart(2, '0')}`;
+				const message = lastCliLine ? `${elapsedStr} | ${lastCliLine}` : elapsedStr;
+				progress.report({ message });
 			}, 1000);
 
 			try {
 				await new Promise((resolve, reject) => {
 					// Use zsh as a login shell to better match manual testing
-					cp.exec(`zsh -l -c '${cliCmd.replace(/'/g, "'\\''")}'`, { cwd: repoRoot, env }, (error: any, stdout: string, stderr: string) => {
-						cliStdout = stdout;
-						cliStderr = stderr;
-						if (error) {
-							reject(error);
+					const shell = process.platform === 'win32' ? 'cmd' : (process.env.SHELL || '/bin/sh');
+					const shellArgs = process.platform === 'win32' ? ['/c', cliCmd] : ['-l', '-c', cliCmd];
+					const child = cp.spawn(shell, shellArgs, { cwd: repoRoot, env });
+
+					child.stdout.setEncoding('utf8');
+					child.stderr.setEncoding('utf8');
+
+					child.stdout.on('data', (data: string) => {
+						cliStdout += data;
+						const lines = data.split(/\r?\n/).filter(Boolean);
+						if (lines.length > 0) {
+							lastCliLine = lines[lines.length - 1];
+						}
+					});
+					child.stderr.on('data', (data: string) => {
+						cliStderr += data;
+						const lines = data.split(/\r?\n/).filter(Boolean);
+						if (lines.length > 0) {
+							lastCliLine = lines[lines.length - 1];
+						}
+					});
+					child.on('error', (err: any) => {
+						reject(err);
+					});
+					child.on('close', (code: number) => {
+						if (code !== 0) {
+							reject(new Error(`diffgraph-ai exited with code ${code}`));
 						} else {
 							resolve(undefined);
 						}

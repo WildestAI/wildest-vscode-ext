@@ -68,4 +68,8 @@ You can author your README using Visual Studio Code. Here are some useful editor
 * [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
 * [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
 
+## License
+
+This project is licensed under the GNU General Public License v3.0 or later (GPLv3). See the [LICENSE](./LICENSE) file for details.
+
 **Enjoy!**

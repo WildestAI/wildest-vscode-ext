@@ -108,10 +108,14 @@ export function activate(context: vscode.ExtensionContext) {
 			// macOS native notification
 			if (process.platform === 'darwin') {
 				const repoName = path.basename(repoRoot);
+				const elapsedMs = Date.now() - startTime;
+				const elapsedMins = Math.floor(elapsedMs / 60000);
+				const elapsedSecs = Math.floor((elapsedMs % 60000) / 1000);
+				const elapsedStr = `${elapsedMins}m ${elapsedSecs}s`;
 				cp.exec(`terminal-notifier \
 					-title "Wildest AI" \
-					-subtitle "DiffGraph generation complete for ${repoName}" \
-					-message "Click to return to the app." \
+					-subtitle "DiffGraph generation complete" \
+					-message "DiffGraph for ${repoName} ready in ${elapsedStr}." \
 					-activate "com.microsoft.VSCode" \
 					-group "diffgraph-done"
 				`);

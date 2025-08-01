@@ -1,6 +1,6 @@
 {
-  "name": "deeproots",
-  "displayName": "deeproots",
+  "name": "wildest-vscode-ext",
+  "displayName": "WildestAI",
   "description": "AI-powered diff for AI generated code",
   "version": "0.0.1",
   "engines": {
@@ -10,17 +10,17 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:deeproots.helloWorld"
+    "onCommand:wildestai.helloWorld"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "deeproots.helloWorld",
+        "command": "wildestai.helloWorld",
         "title": "Hello World"
       },
       {
-        "command": "diffGraph.generate",
+        "command": "wildestai.generate",
         "title": "Generate DiffGraph"
       }
     ]
@@ -51,5 +51,12 @@
     "typescript": "^5.8.3",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.5.2"
+  },
+  "bin": {
+    "wild": "./bin/wild-macos-arm64"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WildestAI/wildest-vscode-ext"
   }
 }

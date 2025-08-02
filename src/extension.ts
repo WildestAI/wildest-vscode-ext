@@ -16,6 +16,10 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import * as cp from 'child_process';
+import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -35,7 +39,149 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	context.subscriptions.push(disposable);
+
+	let disposableDiffGraph = vscode.commands.registerCommand('diffGraph.generate', async () => {
+		// Access the Git extension
+		const gitExtension = vscode.extensions.getExtension('vscode.git');
+		if (!gitExtension) {
+			vscode.window.showErrorMessage('Git extension not found. Please ensure Git is enabled in VS Code.');
+			return;
+		}
+		const git = gitExtension.isActive ? gitExtension.exports.getAPI(1) : (await gitExtension.activate()).getAPI(1);
+		if (!git || !git.repositories || git.repositories.length === 0) {
+			vscode.window.showErrorMessage('No Git repositories found in the workspace.');
+			return;
+		}
+		// Use the first repository for now
+		const repository = git.repositories[0];
+		const repoRoot = repository.rootUri.fsPath;
+		const tmpDir = os.tmpdir();
+		const outputDir = tmpDir;
+		const htmlFileName = `diffgraph-output-${Date.now()}.html`;
+		const htmlFilePath = path.join(outputDir, htmlFileName);
+
+		// Restore .venv/bin to PATH for developer-mode CLI
+		const venvPath = '/Users/apple/Work/wildest/DiffGraph-CLI/.venv';
+		const venvBin = path.join(venvPath, 'bin');
+		const env = Object.assign({}, process.env, {
+			PATH: `${venvBin}:${process.env.PATH}`,
+			VIRTUAL_ENV: venvPath
+		});
+		const cliCmd = `echo $(pwd); diffgraph-ai --output '${htmlFilePath}' --no-open`;
+
+		// Show a progress notification while the CLI runs
+		await vscode.window.withProgress({
+			location: vscode.ProgressLocation.Notification,
+			title: 'Generating DiffGraph... (this may take several minutes)',
+			cancellable: false
+		}, async (progress) => {
+			let cliStdout = '', cliStderr = '';
+			const outputChannel = vscode.window.createOutputChannel('DiffGraph');
+
+			// Stopwatch logic
+			const startTime = Date.now();
+			let interval: NodeJS.Timeout | undefined = undefined;
+			let lastCliLine = '';
+			interval = setInterval(() => {
+				const elapsed = Math.floor((Date.now() - startTime) / 1000);
+				const mins = Math.floor(elapsed / 60);
+				const secs = elapsed % 60;
+				const elapsedStr = `Elapsed: ${mins}:${secs.toString().padStart(2, '0')}`;
+				const message = lastCliLine ? `${elapsedStr} | ${lastCliLine}` : elapsedStr;
+				progress.report({ message });
+			}, 1000);
+
+			try {
+				await new Promise((resolve, reject) => {
+					// Use zsh as a login shell to better match manual testing
+					const shell = process.platform === 'win32' ? 'cmd' : (process.env.SHELL || '/bin/sh');
+					const shellArgs = process.platform === 'win32' ? ['/c', cliCmd] : ['-l', '-c', cliCmd];
+					const child = cp.spawn(shell, shellArgs, { cwd: repoRoot, env });
+
+					child.stdout.setEncoding('utf8');
+					child.stderr.setEncoding('utf8');
+
+					child.stdout.on('data', (data: string) => {
+						cliStdout += data;
+						const lines = data.split(/\r?\n/).filter(Boolean);
+						if (lines.length > 0) {
+							lastCliLine = lines[lines.length - 1];
+						}
+					});
+					child.stderr.on('data', (data: string) => {
+						cliStderr += data;
+						const lines = data.split(/\r?\n/).filter(Boolean);
+						if (lines.length > 0) {
+							lastCliLine = lines[lines.length - 1];
+						}
+					});
+					child.on('error', (err: any) => {
+						reject(err);
+					});
+					child.on('close', (code: number) => {
+						if (code !== 0) {
+							reject(new Error(`diffgraph-ai exited with code ${code}`));
+						} else {
+							resolve(undefined);
+						}
+					});
+				});
+			} catch (err) {
+				if (interval) { clearInterval(interval); }
+				vscode.window.showInformationMessage(`output: ${cliStdout}`);
+				vscode.window.showErrorMessage(`diffgraph-ai failed: ${err}`);
+				vscode.window.showWarningMessage(`error: ${cliStderr}`);
+				return;
+			}
+			if (interval) { clearInterval(interval); }
+
+			// Log CLI command and output/errors
+			outputChannel.appendLine(`Executed: ${cliCmd}`);
+			outputChannel.appendLine('CLI stdout:');
+			outputChannel.appendLine(cliStdout);
+			if (cliStderr) {
+				outputChannel.appendLine('CLI stderr:');
+				outputChannel.appendLine(cliStderr);
+			}
+			outputChannel.show(true);
+
+			// macOS native notification
+			if (process.platform === 'darwin') {
+				const repoName = path.basename(repoRoot);
+				const elapsedMs = Date.now() - startTime;
+				const elapsedMins = Math.floor(elapsedMs / 60000);
+				const elapsedSecs = Math.floor((elapsedMs % 60000) / 1000);
+				const elapsedStr = `${elapsedMins}m ${elapsedSecs}s`;
+				cp.exec(`terminal-notifier \
+					-title "Wildest AI" \
+					-subtitle "DiffGraph generation complete" \
+					-message "DiffGraph for ${repoName} ready in ${elapsedStr}." \
+					-activate "com.microsoft.VSCode" \
+					-group "diffgraph-done"
+				`);
+			}
+
+			// Create and show a new webview panel
+			const panel = vscode.window.createWebviewPanel(
+				'diffGraph',
+				'DiffGraph',
+				vscode.ViewColumn.Beside,
+				{
+					enableScripts: true
+				}
+			);
+			// Read the generated HTML file and show its contents in the webview
+			let htmlContent = '';
+			try {
+				htmlContent = fs.readFileSync(htmlFilePath, 'utf8');
+			} catch (e) {
+				htmlContent = `<html><body><h1>Error loading DiffGraph output</h1><pre>${e}</pre></body></html>`;
+			}
+			panel.webview.html = htmlContent;
+		});
+	});
+	context.subscriptions.push(disposableDiffGraph);
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() { }

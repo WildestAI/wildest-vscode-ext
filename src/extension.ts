@@ -5,6 +5,7 @@ import * as cp from 'child_process';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as notifier from 'node-notifier';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -130,21 +131,31 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			outputChannel.show(true);
 
-			// macOS native notification
-			if (process.platform === 'darwin') {
-				const repoName = path.basename(repoRoot);
-				const elapsedMs = Date.now() - startTime;
-				const elapsedMins = Math.floor(elapsedMs / 60000);
-				const elapsedSecs = Math.floor((elapsedMs % 60000) / 1000);
-				const elapsedStr = `${elapsedMins}m ${elapsedSecs}s`;
-				cp.exec(`terminal-notifier \
-					-title "Wildest AI" \
-					-subtitle "DiffGraph generation complete" \
-					-message "DiffGraph for ${repoName} ready in ${elapsedStr}." \
-					-activate "com.microsoft.VSCode" \
-					-group "diffgraph-done"
-				`);
-			}
+			const repoName = path.basename(repoRoot);
+			const elapsedMs = Date.now() - startTime;
+			const elapsedMins = Math.floor(elapsedMs / 60000);
+			const elapsedSecs = Math.floor((elapsedMs % 60000) / 1000);
+			const elapsedStr = `${elapsedMins}m ${elapsedSecs}s`;
+			notifier.notify(
+				{
+					title: 'Wildest AI: DiffGraph generation complete',
+					message: `DiffGraph for ${repoName} ready in ${elapsedStr}.`,
+					icon: path.join(__dirname, 'media', 'logo-transparent.png'),
+					sound: true,
+					wait: true,
+					timeout: 60
+				},
+				(err, response, metadata) => {
+					if (err) {
+						vscode.window.showErrorMessage(`Notification error: ${err.message}`);
+						return;
+					}
+					if (metadata) {
+						console.log(`Notification metadata: ${JSON.stringify(metadata)}`);
+					}
+				}
+			);
+			console.log(`DiffGraph for ${repoName} generated in ${elapsedStr}. Output: ${htmlFilePath}`);
 
 			// Create and show a new webview panel
 			const panel = vscode.window.createWebviewPanel(

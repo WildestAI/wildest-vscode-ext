@@ -21,6 +21,33 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 
+class DiffGraphViewProvider implements vscode.WebviewViewProvider {
+	private _view?: vscode.WebviewView;
+
+	constructor(
+		private readonly _extensionUri: vscode.Uri,
+	) { }
+
+	public resolveWebviewView(
+		webviewView: vscode.WebviewView,
+		context: vscode.WebviewViewResolveContext,
+		_token: vscode.CancellationToken,
+	) {
+		this._view = webviewView;
+		webviewView.webview.options = {
+			enableScripts: true,
+			localResourceRoots: [this._extensionUri]
+		};
+	}
+
+	public update(htmlContent: string) {
+		if (this._view) {
+			this._view.webview.html = htmlContent;
+			this._view.show?.(true);
+		}
+	}
+}
+
 function getWildBinaryPath(context: vscode.ExtensionContext): string {
 	const platform = os.platform();
 	const arch = os.arch();
@@ -193,23 +220,20 @@ export function activate(context: vscode.ExtensionContext) {
 				`);
 			}
 
-			// Create and show a new webview panel
-			const panel = vscode.window.createWebviewPanel(
-				'diffGraph',
-				'DiffGraph',
-				vscode.ViewColumn.Beside,
-				{
-					enableScripts: true
-				}
+			// Show the DiffGraph in the sidebar view
+			const provider = new DiffGraphViewProvider(context.extensionUri);
+			context.subscriptions.push(
+				vscode.window.registerWebviewViewProvider('wildestai.diffGraphView', provider)
 			);
-			// Read the generated HTML file and show its contents in the webview
+
+			// Update the view with the new content
 			let htmlContent = '';
 			try {
 				htmlContent = fs.readFileSync(htmlFilePath, 'utf8');
 			} catch (e) {
 				htmlContent = `<html><body><h1>Error loading DiffGraph output</h1><pre>${e}</pre></body></html>`;
 			}
-			panel.webview.html = htmlContent;
+			provider.update(htmlContent);
 		});
 	});
 	context.subscriptions.push(disposableDiffGraph);

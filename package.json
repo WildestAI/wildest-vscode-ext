@@ -56,7 +56,10 @@
     "typescript": "^5.8.3"
   },
   "bin": {
-    "wild": "./bin/wild-macos-arm64"
+    "wild-macos-arm64": "./bin/wild-macos-arm64",
+    "wild-macos-x64": "./bin/wild-macos-x64",
+    "wild-linux-x64": "./bin/wild-linux-x64",
+    "wild-win.exe": "./bin/wild-win.exe"
   },
   "repository": {
     "type": "git",

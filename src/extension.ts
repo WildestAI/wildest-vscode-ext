@@ -26,6 +26,7 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
+		private readonly _context: vscode.ExtensionContext
 	) { }
 
 	public resolveWebviewView(
@@ -38,6 +39,18 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			enableScripts: true,
 			localResourceRoots: [this._extensionUri]
 		};
+
+		// Generate the initial view when it becomes visible
+		webviewView.onDidChangeVisibility(() => {
+			if (webviewView.visible) {
+				this.generateDiffGraph();
+			}
+		});
+
+		// If the view is already visible, generate the graph
+		if (webviewView.visible) {
+			this.generateDiffGraph();
+		}
 	}
 
 	public update(htmlContent: string) {
@@ -46,49 +59,8 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			this._view.show?.(true);
 		}
 	}
-}
 
-function getWildBinaryPath(context: vscode.ExtensionContext): string {
-	const platform = os.platform();
-	const arch = os.arch();
-
-	let binaryName = '';
-	if (platform === 'darwin' && arch === 'arm64') {
-		binaryName = 'wild-macos-arm64';
-	} else if (platform === 'darwin') {
-		binaryName = 'wild-macos-x64';
-	} else if (platform === 'linux') {
-		binaryName = 'wild-linux-x64';
-	} else if (platform === 'win32') {
-		binaryName = 'wild-win.exe';
-	} else {
-		throw new Error(`Unsupported platform: ${platform} ${arch}`);
-	}
-
-	return path.join(context.extensionPath, 'bin', binaryName);
-}
-
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
-
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "Wildest AI" is now active!');
-
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('wildestai.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from Wildest AI!');
-	});
-
-	context.subscriptions.push(disposable);
-
-	let disposableDiffGraph = vscode.commands.registerCommand('wildestai.generate', async () => {
-		// Access the Git extension
+	public async generateDiffGraph() {
 		const gitExtension = vscode.extensions.getExtension('vscode.git');
 		if (!gitExtension) {
 			vscode.window.showErrorMessage('Git extension not found. Please ensure Git is enabled in VS Code.');
@@ -99,7 +71,7 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.window.showErrorMessage('No Git repositories found in the workspace.');
 			return;
 		}
-		// Use the first repository for now
+
 		const repository = git.repositories[0];
 		const repoRoot = repository.rootUri.fsPath;
 		const tmpDir = os.tmpdir();
@@ -124,7 +96,7 @@ export function activate(context: vscode.ExtensionContext) {
 		} else {
 			console.log('Running in production mode');
 			// Production: use packaged binary
-			const wildBinary = getWildBinaryPath(context);
+			const wildBinary = getWildBinaryPath(this._context);
 			cliCmd = `"${wildBinary}" --output '${htmlFilePath}' --no-open`;
 		}
 
@@ -220,12 +192,6 @@ export function activate(context: vscode.ExtensionContext) {
 				`);
 			}
 
-			// Show the DiffGraph in the sidebar view
-			const provider = new DiffGraphViewProvider(context.extensionUri);
-			context.subscriptions.push(
-				vscode.window.registerWebviewViewProvider('wildestai.diffGraphView', provider)
-			);
-
 			// Update the view with the new content
 			let htmlContent = '';
 			try {
@@ -233,8 +199,52 @@ export function activate(context: vscode.ExtensionContext) {
 			} catch (e) {
 				htmlContent = `<html><body><h1>Error loading DiffGraph output</h1><pre>${e}</pre></body></html>`;
 			}
-			provider.update(htmlContent);
+			this.update(htmlContent);
 		});
+	}
+}
+
+function getWildBinaryPath(context: vscode.ExtensionContext): string {
+	const platform = os.platform();
+	const arch = os.arch();
+
+	let binaryName = '';
+	if (platform === 'darwin' && arch === 'arm64') {
+		binaryName = 'wild-macos-arm64';
+	} else if (platform === 'darwin') {
+		binaryName = 'wild-macos-x64';
+	} else if (platform === 'linux') {
+		binaryName = 'wild-linux-x64';
+	} else if (platform === 'win32') {
+		binaryName = 'wild-win.exe';
+	} else {
+		throw new Error(`Unsupported platform: ${platform} ${arch}`);
+	}
+
+	return path.join(context.extensionPath, 'bin', binaryName);
+}
+
+// This method is called when your extension is activated
+// Your extension is activated the very first time the command is executed
+export function activate(context: vscode.ExtensionContext) {
+	// Register the DiffGraph view provider
+	const provider = new DiffGraphViewProvider(context.extensionUri, context);
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider('wildestai.diffGraphView', provider)
+	);
+
+	// Register the hello world command
+	const helloDisposable = vscode.commands.registerCommand('wildestai.helloWorld', () => {
+		vscode.window.showInformationMessage('Hello World from Wildest AI!');
+	});
+	context.subscriptions.push(helloDisposable);
+
+	// Register command to refresh the DiffGraph
+	const disposableDiffGraph = vscode.commands.registerCommand('wildestai.generate', async () => {
+		// Show and focus the DiffGraph view
+		await vscode.commands.executeCommand('wildestai.diffGraphView.focus');
+		// Trigger a refresh by calling the provider's generate method
+		await provider.generateDiffGraph();
 	});
 	context.subscriptions.push(disposableDiffGraph);
 }

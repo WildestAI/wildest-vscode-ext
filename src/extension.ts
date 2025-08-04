@@ -21,26 +21,53 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 
+function getWildBinaryPath(context: vscode.ExtensionContext): string {
+	const platform = os.platform();
+	const arch = os.arch();
+
+	let binaryName = '';
+	if (platform === 'darwin' && arch === 'arm64') {
+		binaryName = 'wild-macos-arm64';
+	} else if (platform === 'darwin') {
+		binaryName = 'wild-macos-x64';
+	} else if (platform === 'linux') {
+		binaryName = 'wild-linux-x64';
+	} else if (platform === 'win32') {
+		binaryName = 'wild-win.exe';
+	} else {
+		throw new Error(`Unsupported platform: ${platform} ${arch}`);
+	}
+
+	const binaryPath = path.join(context.extensionPath, 'bin', binaryName);
+
+	// Validate that the binary actually exists
+	if (!fs.existsSync(binaryPath)) {
+		throw new Error(`Binary not found: ${binaryPath}`);
+	}
+
+	return binaryPath;
+}
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "deeproots" is now active!');
+	console.log('Congratulations, your extension "Wildest AI" is now active!');
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('deeproots.helloWorld', () => {
+	const disposable = vscode.commands.registerCommand('wildestai.helloWorld', () => {
 		// The code you place here will be executed every time your command is executed
 		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from deeproots!');
+		vscode.window.showInformationMessage('Hello World from Wildest AI!');
 	});
 
 	context.subscriptions.push(disposable);
 
-	let disposableDiffGraph = vscode.commands.registerCommand('diffGraph.generate', async () => {
+	let disposableDiffGraph = vscode.commands.registerCommand('wildestai.generate', async () => {
 		// Access the Git extension
 		const gitExtension = vscode.extensions.getExtension('vscode.git');
 		if (!gitExtension) {
@@ -60,14 +87,26 @@ export function activate(context: vscode.ExtensionContext) {
 		const htmlFileName = `diffgraph-output-${Date.now()}.html`;
 		const htmlFilePath = path.join(outputDir, htmlFileName);
 
-		// Restore .venv/bin to PATH for developer-mode CLI
-		const venvPath = '/Users/apple/Work/wildest/DiffGraph-CLI/.venv';
-		const venvBin = path.join(venvPath, 'bin');
-		const env = Object.assign({}, process.env, {
-			PATH: `${venvBin}:${process.env.PATH}`,
-			VIRTUAL_ENV: venvPath
-		});
-		const cliCmd = `echo $(pwd); diffgraph-ai --output '${htmlFilePath}' --no-open`;
+		// Choose CLI path based on dev/prod mode
+		let cliCmd: string;
+		let env = Object.assign({}, process.env);
+		const isDevMode = process.env.WILDEST_DEV_MODE === '1' || process.env.NODE_ENV === 'development';
+		if (isDevMode) {
+			console.log('Running in development mode');
+			// Developer mode: use venv wild CLI
+			const venvPath = '/Users/apple/Work/wildest/DiffGraph-CLI/.venv';
+			const venvBin = path.join(venvPath, 'bin');
+			env = Object.assign({}, process.env, {
+				PATH: `${venvBin}:${process.env.PATH}`,
+				VIRTUAL_ENV: venvPath
+			});
+			cliCmd = `wild --output '${htmlFilePath}' --no-open`;
+		} else {
+			console.log('Running in production mode');
+			// Production: use packaged binary
+			const wildBinary = getWildBinaryPath(context);
+			cliCmd = `"${wildBinary}" --output '${htmlFilePath}' --no-open`;
+		}
 
 		// Show a progress notification while the CLI runs
 		await vscode.window.withProgress({
@@ -120,7 +159,7 @@ export function activate(context: vscode.ExtensionContext) {
 					});
 					child.on('close', (code: number) => {
 						if (code !== 0) {
-							reject(new Error(`diffgraph-ai exited with code ${code}`));
+							reject(new Error(`wild exited with code ${code}`));
 						} else {
 							resolve(undefined);
 						}
@@ -129,7 +168,7 @@ export function activate(context: vscode.ExtensionContext) {
 			} catch (err) {
 				if (interval) { clearInterval(interval); }
 				vscode.window.showInformationMessage(`output: ${cliStdout}`);
-				vscode.window.showErrorMessage(`diffgraph-ai failed: ${err}`);
+				vscode.window.showErrorMessage(`wild failed: ${err}`);
 				vscode.window.showWarningMessage(`error: ${cliStderr}`);
 				return;
 			}

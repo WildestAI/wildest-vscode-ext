@@ -1,26 +1,29 @@
 {
-  "name": "deeproots",
-  "displayName": "deeproots",
+  "name": "wildest-vscode-ext",
+  "displayName": "WildestAI",
+  "publisher": "WildestAI",
   "description": "AI-powered diff for AI generated code",
   "version": "0.0.1",
+  "icon": "media/logo-transparent.png",
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.99.0"
   },
   "categories": [
-    "Other"
+    "SCM Providers",
+    "Visualization"
   ],
   "activationEvents": [
-    "onCommand:deeproots.helloWorld"
+    "onCommand:wildestai.helloWorld"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "deeproots.helloWorld",
+        "command": "wildestai.helloWorld",
         "title": "Hello World"
       },
       {
-        "command": "diffGraph.generate",
+        "command": "wildestai.generate",
         "title": "Generate DiffGraph"
       }
     ]
@@ -40,17 +43,27 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.100.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
+    "@types/vscode": "^1.99.0",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
-    "eslint": "^9.25.1",
-    "esbuild": "^0.25.3",
-    "npm-run-all": "^4.1.5",
-    "typescript": "^5.8.3",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.25.3",
+    "eslint": "^9.25.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.8.3"
+  },
+  "bin": {
+    "wild-macos-arm64": "./bin/wild-macos-arm64",
+    "wild-macos-x64": "./bin/wild-macos-x64",
+    "wild-linux-x64": "./bin/wild-linux-x64",
+    "wild-win.exe": "./bin/wild-win.exe"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WildestAI/wildest-vscode-ext"
   },
   "license": "GPL-3.0-or-later"
 }

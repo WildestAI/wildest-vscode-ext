@@ -1,20 +1,34 @@
-# deeproots README
 
-This is the README for your extension "deeproots". After writing up a brief description, we recommend including the following sections.
+# WildestAI VS Code Extension
+
+WildestAI is a Visual Studio Code extension that enhances your development workflow with advanced features and seamless integration. This extension is designed to help you be more productive and efficient in your coding tasks.
+
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- Generate interactive DiffGraph visualizations for your Git repository
+- Run the `WildestAI: Generate DiffGraph` command to analyze code changes
+- Progress notifications and output channel for CLI feedback
+- Automatic detection of development or production mode
+- macOS native notifications when generation completes
 
-For example if there is an image subfolder under your extension project workspace:
+<!-- Add screenshots or GIFs in the images/ folder if available -->
 
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- Visual Studio Code 1.70.0 or later
+- A Git repository must be open in your workspace
+- For development mode: Python virtual environment with the `wild` CLI installed (see extension source for venv path)
+- For production: The packaged `wild` binary must be present in the `bin/` directory
+
+
+## Commands
+
+This extension contributes the following commands:
+
+- `WildestAI: Hello World` (`wildestai.helloWorld`): Shows a Hello World message
+- `WildestAI: Generate DiffGraph` (`wildestai.generate`): Generates a DiffGraph HTML visualization for your current Git repository
 
 ## Extension Settings
 
@@ -24,20 +38,21 @@ For example:
 
 This extension contributes the following settings:
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- `wildestai.enable`: Enable/disable the WildestAI extension.
+- `wildestai.featureX`: Enable feature X (default: true).
+
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- No known issues at this time. Please report any bugs or feature requests via the issue tracker.
+- Only the first Git repository in the workspace is used
+- The extension currently supports macOS, Linux, and Windows (see source for supported binaries)
+
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
-
 ### 1.0.0
-
-Initial release of ...
+- Initial release of WildestAI.
 
 ### 1.0.1
 

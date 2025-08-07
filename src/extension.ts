@@ -24,11 +24,14 @@ import * as path from 'path';
 class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
 	private _isGenerating: boolean = false;
+	private _outputChannel: vscode.OutputChannel;
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
 		private readonly _context: vscode.ExtensionContext
-	) { }
+	) {
+		this._outputChannel = vscode.window.createOutputChannel('DiffGraph');
+	}
 
 	public resolveWebviewView(
 		webviewView: vscode.WebviewView,
@@ -116,11 +119,10 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			// Show a progress notification while the CLI runs
 			await vscode.window.withProgress({
 				location: vscode.ProgressLocation.Notification,
-				title: 'Generating DiffGraph... (this may take several minutes)',
+				title: 'Generating DiffGraph...',
 				cancellable: false
 			}, async (progress) => {
 				let cliStdout = '', cliStderr = '';
-				const outputChannel = vscode.window.createOutputChannel('DiffGraph');
 
 				// Stopwatch logic
 				const startTime = Date.now();
@@ -180,14 +182,14 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 				if (interval) { clearInterval(interval); }
 
 				// Log CLI command and output/errors
-				outputChannel.appendLine(`Executed: ${cliCmd}`);
-				outputChannel.appendLine('CLI stdout:');
-				outputChannel.appendLine(cliStdout);
+				this._outputChannel.appendLine(`Executed: ${cliCmd}`);
+				this._outputChannel.appendLine('CLI stdout:');
+				this._outputChannel.appendLine(cliStdout);
 				if (cliStderr) {
-					outputChannel.appendLine('CLI stderr:');
-					outputChannel.appendLine(cliStderr);
+					this._outputChannel.appendLine('CLI stderr:');
+					this._outputChannel.appendLine(cliStderr);
 				}
-				outputChannel.show(true);
+				this._outputChannel.show(true);
 
 				// macOS native notification
 				if (process.platform === 'darwin') {

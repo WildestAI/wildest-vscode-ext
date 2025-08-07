@@ -12,9 +12,6 @@
     "SCM Providers",
     "Visualization"
   ],
-  "activationEvents": [
-    "onCommand:wildestai.helloWorld"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -31,7 +28,8 @@
         {
           "type": "webview",
           "id": "wildestai.diffGraphView",
-          "name": "DiffGraph"
+          "name": "DiffGraph",
+          "icon": "media/logo-transparent.png"
         }
       ]
     },

@@ -25,6 +25,7 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
 	private _isGenerating: boolean = false;
 	private _outputChannel: vscode.OutputChannel;
+	private _isInitialLoad: boolean = true;
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
@@ -44,13 +45,12 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			localResourceRoots: [this._extensionUri]
 		};
 
-		let isInitialLoad = true;
 		// Generate the initial view when it becomes visible
 		webviewView.onDidChangeVisibility(() => {
 			if (webviewView.visible) {
-				if (isInitialLoad) {
+				if (this._isInitialLoad) {
 					this.generateDiffGraph();
-					isInitialLoad = false;
+					this._isInitialLoad = false;
 				}
 			}
 		});
@@ -58,7 +58,7 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 		// If the view is already visible, generate the graph
 		if (webviewView.visible) {
 			this.generateDiffGraph();
-			isInitialLoad = false;
+			this._isInitialLoad = false;
 		}
 	}
 

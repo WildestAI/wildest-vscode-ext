@@ -204,7 +204,16 @@ class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 					-message "DiffGraph for ${repoName} ready in ${elapsedStr}." \
 					-activate "com.microsoft.VSCode" \
 					-group "diffgraph-done"
-				`);
+						`, (error, stdout, stderr) => {
+						if (error) {
+							this._outputChannel.appendLine('Native notifications disabled: terminal-notifier not found');
+							this._outputChannel.appendLine('To enable, install with: brew install terminal-notifier');
+						}
+						if (stderr) {
+							this._outputChannel.appendLine('terminal-notifier stderr:');
+							this._outputChannel.appendLine(stderr);
+						}
+					});
 				}
 
 				// Update the view with the new content

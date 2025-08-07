@@ -237,7 +237,14 @@ function getWildBinaryPath(context: vscode.ExtensionContext): string {
 		throw new Error(`Unsupported platform: ${platform} ${arch}`);
 	}
 
-	return path.join(context.extensionPath, 'bin', binaryName);
+	const binaryPath = path.join(context.extensionPath, 'bin', binaryName);
+
+	// Validate that the binary actually exists
+	if (!fs.existsSync(binaryPath)) {
+		throw new Error(`Binary not found: ${binaryPath}`);
+	}
+
+	return binaryPath;
 }
 
 // This method is called when your extension is activated

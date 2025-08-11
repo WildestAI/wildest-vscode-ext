@@ -3,7 +3,7 @@
   "displayName": "WildestAI",
   "publisher": "WildestAI",
   "description": "AI-powered diff for AI generated code",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "icon": "media/logo-transparent.png",
   "engines": {
     "vscode": "^1.99.0"

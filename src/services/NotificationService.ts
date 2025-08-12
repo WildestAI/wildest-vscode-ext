@@ -29,11 +29,12 @@ export class NotificationService {
 	}
 
 	private sendDarwinNotification(operation: string, itemName: string, elapsedStr: string): void {
+		const bundleId = process.env.__CFBundleIdentifier || 'com.microsoft.VSCode';
 		cp.execFile('terminal-notifier', [
 			'-title', 'Wildest AI',
 			'-subtitle', `${operation} complete`,
 			'-message', `${operation} for ${itemName} ready in ${elapsedStr}.`,
-			'-activate', 'com.microsoft.VSCode',
+			'-activate', bundleId,
 			'-group', 'wildest-operation-done'
 		], (error, stdout, stderr) => {
 			if (error) {

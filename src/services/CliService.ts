@@ -39,9 +39,10 @@ export class CliService {
 
 		try {
 			await new Promise((resolve, reject) => {
-				const shell = process.platform === 'win32' ? 'cmd' : (process.env.SHELL || '/bin/sh');
-				const shellArgs = process.platform === 'win32' ? ['/c', command.cliCmd] : ['-l', '-c', command.cliCmd];
-				const child = cp.spawn(shell, shellArgs, { cwd: repoRoot, env: command.env });
+				const child = cp.spawn(command.executable, command.args, {
+					cwd: repoRoot,
+					env: command.env
+				});
 
 				child.stdout.setEncoding('utf8');
 				child.stderr.setEncoding('utf8');
@@ -82,7 +83,8 @@ export class CliService {
 			VIRTUAL_ENV: venvPath
 		});
 		return {
-			cliCmd: `wild diff --output '${htmlFilePath}' --no-open`,
+			executable: 'wild',
+			args: ['diff', '--output', htmlFilePath, '--no-open'],
 			env
 		};
 	}
@@ -94,7 +96,8 @@ export class CliService {
 	): CliCommand {
 		const wildBinary = this.getBinaryPath(context);
 		return {
-			cliCmd: `"${wildBinary}" diff --output '${htmlFilePath}' --no-open`,
+			executable: wildBinary,
+			args: ['diff', '--output', htmlFilePath, '--no-open'],
 			env
 		};
 	}

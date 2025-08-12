@@ -6,7 +6,8 @@ export interface GitInfo {
 }
 
 export interface CliCommand {
-	cliCmd: string;
+	executable: string;
+	args: string[];
 	env: NodeJS.ProcessEnv;
 }
 

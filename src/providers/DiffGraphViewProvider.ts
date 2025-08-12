@@ -92,7 +92,8 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 		}, async (progress) => {
 			try {
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
-				this.logOutput(cliCommand.cliCmd, stdout, stderr);
+				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
+				this.logOutput(cmdString, stdout, stderr);
 				this._notificationService.sendOperationComplete(
 					'DiffGraph',
 					path.basename(repoRoot),

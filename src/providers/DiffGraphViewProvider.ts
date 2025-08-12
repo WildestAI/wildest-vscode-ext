@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitService } from '../services/GitService';
 import { CliService } from '../services/CliService';
-import { sendMacNotification } from '../utils/notifications';
+import { NotificationService } from '../services/NotificationService';
 import { CliCommand } from '../utils/types';
 
 export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
@@ -12,12 +12,14 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 	private _isGenerating: boolean = false;
 	private _outputChannel: vscode.OutputChannel;
 	private _isInitialLoad: boolean = true;
+	private _notificationService: NotificationService;
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
 		private readonly _context: vscode.ExtensionContext
 	) {
 		this._outputChannel = vscode.window.createOutputChannel('DiffGraph');
+		this._notificationService = new NotificationService(this._outputChannel);
 	}
 
 	public resolveWebviewView(
@@ -91,7 +93,11 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			try {
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
 				this.logOutput(cliCommand.cliCmd, stdout, stderr);
-				sendMacNotification(repoRoot, startTime, this._outputChannel);
+				this._notificationService.sendOperationComplete(
+					'DiffGraph',
+					path.basename(repoRoot),
+					{ startTime }
+				);
 
 				const htmlContent = fs.readFileSync(htmlFilePath, 'utf8');
 				this.update(htmlContent);

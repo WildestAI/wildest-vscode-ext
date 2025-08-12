@@ -75,7 +75,7 @@ export class CliService {
 	}
 
 	private static getDevCommand(htmlFilePath: string, env: NodeJS.ProcessEnv): CliCommand {
-		const venvPath = '/Users/apple/Work/wildest/DiffGraph-CLI/.venv';
+		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
 		const venvBin = path.join(venvPath, 'bin');
 		env = Object.assign({}, env, {
 			PATH: `${venvBin}:${env.PATH}`,

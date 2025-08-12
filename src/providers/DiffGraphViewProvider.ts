@@ -109,9 +109,9 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 
 	private logOutput(command: string, stdout: string, stderr: string) {
 		this._outputChannel.appendLine(`Executed: ${command}`);
-		this._outputChannel.appendLine('CLI stdout:\\n' + stdout);
+		this._outputChannel.appendLine('CLI stdout:\n' + stdout);
 		if (stderr) {
-			this._outputChannel.appendLine('CLI stderr:\\n' + stderr);
+			this._outputChannel.appendLine('CLI stderr:\n' + stderr);
 		}
 		this._outputChannel.show(true);
 	}

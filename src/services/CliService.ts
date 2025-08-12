@@ -48,7 +48,7 @@ export class CliService {
 
 				child.stdout.on('data', (data: string) => {
 					cliStdout += data;
-					const lines = data.split(/\\r?\\n/).filter(Boolean);
+					const lines = data.split(/\r?\n/).filter(Boolean);
 					if (lines.length > 0) {
 						lastCliLine = lines[lines.length - 1];
 					}
@@ -56,7 +56,7 @@ export class CliService {
 
 				child.stderr.on('data', (data: string) => {
 					cliStderr += data;
-					const lines = data.split(/\\r?\\n/).filter(Boolean);
+					const lines = data.split(/\r?\n/).filter(Boolean);
 					if (lines.length > 0) {
 						lastCliLine = lines[lines.length - 1];
 					}

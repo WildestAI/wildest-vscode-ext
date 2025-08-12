@@ -79,7 +79,7 @@ export class CliService {
 		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
 		const venvBin = path.join(venvPath, 'bin');
 		env = Object.assign({}, env, {
-			PATH: `${venvBin}:${env.PATH}`,
+			PATH: `${venvBin}${path.delimiter}${env.PATH}`,
 			VIRTUAL_ENV: venvPath
 		});
 		return {

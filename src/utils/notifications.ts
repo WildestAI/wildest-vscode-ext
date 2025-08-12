@@ -15,21 +15,21 @@ export function sendMacNotification(
 	const elapsedSecs = Math.floor((elapsedMs % 60000) / 1000);
 	const elapsedStr = `${elapsedMins}m ${elapsedSecs}s`;
 
-	cp.exec(`terminal-notifier \\
-        -title "Wildest AI" \\
-        -subtitle "DiffGraph generation complete" \\
-        -message "DiffGraph for ${repoName} ready in ${elapsedStr}." \\
-        -activate "com.microsoft.VSCode" \\
-        -group "diffgraph-done"`,
-		(error, stdout, stderr) => {
-			if (error) {
-				outputChannel.appendLine('Native notifications disabled: terminal-notifier not found');
-				outputChannel.appendLine('To enable, install with: brew install terminal-notifier');
-			}
-			if (stderr) {
-				outputChannel.appendLine('terminal-notifier stderr:');
-				outputChannel.appendLine(stderr);
-			}
+	cp.execFile('terminal-notifier', [
+		'-title', 'Wildest AI',
+		'-subtitle', 'DiffGraph generation complete',
+		'-message', `DiffGraph for ${repoName} ready in ${elapsedStr}.`,
+		'-activate', 'com.microsoft.VSCode',
+		'-group', 'diffgraph-done'
+	], (error, stdout, stderr) => {
+		if (error) {
+			outputChannel.appendLine('Native notifications disabled: terminal-notifier not found');
+			outputChannel.appendLine('To enable, install with: brew install terminal-notifier');
+			outputChannel.appendLine(`Debug info - repoName: ${repoName}, elapsed: ${elapsedStr}`);
 		}
-	);
+		if (stderr) {
+			outputChannel.appendLine('terminal-notifier stderr:');
+			outputChannel.appendLine(stderr);
+		}
+	});
 }

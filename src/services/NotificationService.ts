@@ -37,8 +37,13 @@ export class NotificationService {
 			'-group', 'wildest-operation-done'
 		], (error, stdout, stderr) => {
 			if (error) {
-				this.outputChannel.appendLine('Native notifications disabled: terminal-notifier not found');
-				this.outputChannel.appendLine('To enable, install with: brew install terminal-notifier');
+				const enoent = (error as NodeJS.ErrnoException).code === 'ENOENT';
+				if (enoent) {
+					this.outputChannel.appendLine('Native notifications disabled: terminal-notifier not found.');
+					this.outputChannel.appendLine('To enable, install with: brew install terminal-notifier');
+				} else {
+					this.outputChannel.appendLine(`Native notification failed: ${error.message}`);
+				}
 				// Log the attempted values for diagnostics
 				this.outputChannel.appendLine(`Debug info - operation: ${operation}, item: ${itemName}, elapsed: ${elapsedStr}`);
 			}

@@ -24,3 +24,13 @@ export interface CliOutput {
 	stdout: string;
 	stderr: string;
 }
+
+// TreeView node types
+export interface ChangesViewNode {
+	id: string;
+	label: string;
+	type: 'root' | 'repo' | 'repoChanges';
+	children?: ChangesViewNode[];
+	repoPath?: string;
+	contextValue?: string;
+}

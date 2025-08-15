@@ -3,7 +3,7 @@
   "displayName": "WildestAI",
   "publisher": "WildestAI",
   "description": "AI-powered diff for AI generated code",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "icon": "media/logo-transparent.png",
   "engines": {
     "vscode": "^1.99.0"
@@ -26,23 +26,89 @@
     "views": {
       "wildestai-sidebar": [
         {
+          "type": "tree",
+          "id": "wildestai.changesView",
+          "name": "Change Selector",
+          "when": "true",
+          "icon": "$(git-branch)"
+        },
+        {
           "type": "webview",
           "id": "wildestai.diffGraphView",
           "name": "DiffGraph",
-          "icon": "media/logo-transparent.png"
+          "when": "true",
+          "icon": "$(graph)"
+        },
+        {
+          "type": "webview",
+          "id": "wildestai.graphView",
+          "name": "Graph",
+          "when": "true",
+          "icon": "$(git-commit)"
+        }
+      ],
+      "scm": [
+        {
+          "id": "wildestai.changesViewInSCM",
+          "name": "Wildest AI",
+          "when": "scmProvider == git",
+          "icon": "$(git-branch)"
         }
       ]
     },
     "commands": [
       {
         "command": "wildestai.helloWorld",
-        "title": "Hello World"
+        "title": "Wildest AI: Hello World"
       },
       {
-        "command": "wildestai.generate",
-        "title": "Generate DiffGraph"
+        "command": "wildestai.refreshChangesView",
+        "title": "Wildest AI: Refresh Changes View",
+        "icon": "$(refresh)",
+        "category": "Wildest AI"
+      },
+      {
+        "command": "wildestai.openChanges",
+        "title": "Wildest AI: Show Changes",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "wildestai.openStagedChanges",
+        "title": "Wildest AI: Show Staged Changes",
+        "icon": "$(diff-added)"
+      },
+      {
+        "command": "wildestai.refreshChanges",
+        "title": "Wildest AI: Refresh Changes",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "wildestai.refreshStagedChanges",
+        "title": "Wildest AI: Refresh Staged Changes",
+        "icon": "$(refresh)"
       }
-    ]
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "wildestai.refreshChanges",
+          "when": "view == wildestai.changesView && viewItem == changes",
+          "group": "navigation"
+        },
+        {
+          "command": "wildestai.refreshStagedChanges",
+          "when": "view == wildestai.changesView && viewItem == stagedChanges",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "wildestai.refreshChangesView",
+          "when": "view == wildestai.changesView",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

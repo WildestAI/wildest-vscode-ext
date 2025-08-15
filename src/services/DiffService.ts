@@ -1,0 +1,270 @@
+// Copyright (C) 2025  Wildest AI
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import * as vscode from 'vscode';
+import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
+import { GitService } from './GitService';
+import { CliService } from './CliService';
+import { DiffGraphCache } from './DiffGraphCache';
+import { NotificationService } from './NotificationService';
+import { CliCommand } from '../utils/types';
+import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
+
+export class DiffService {
+	private _outputChannel: vscode.OutputChannel;
+	private _notificationService: NotificationService;
+	private _cache: DiffGraphCache;
+	private _diffGraphViewProvider?: DiffGraphViewProvider;
+
+	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
+		this._outputChannel = vscode.window.createOutputChannel('WildestAI');
+		this._notificationService = new NotificationService(this._outputChannel);
+		this._cache = DiffGraphCache.getInstance();
+		this._diffGraphViewProvider = diffGraphViewProvider;
+	}
+
+	/**
+	 * Opens changes (unstaged) in a webview
+	 * Uses cache if available, otherwise generates new content
+	 */
+	public async openChanges(context: vscode.ExtensionContext, repoPath?: string): Promise<void> {
+		await this.openDiffView(context, false, repoPath);
+	}
+
+	/**
+	 * Opens staged changes in a webview
+	 * Uses cache if available, otherwise generates new content
+	 */
+	public async openStagedChanges(context: vscode.ExtensionContext, repoPath?: string): Promise<void> {
+		await this.openDiffView(context, true, repoPath);
+	}
+
+	/**
+	 * Refreshes changes (unstaged) by invalidating cache and generating new content
+	 */
+	public async refreshChanges(context: vscode.ExtensionContext, repoPath?: string): Promise<void> {
+		await this.refreshDiffView(context, false, repoPath);
+	}
+
+	/**
+	 * Refreshes staged changes by invalidating cache and generating new content
+	 */
+	public async refreshStagedChanges(context: vscode.ExtensionContext, repoPath?: string): Promise<void> {
+		await this.refreshDiffView(context, true, repoPath);
+	}
+
+	/**
+	 * Opens a diff view, using cache if available
+	 */
+	private async openDiffView(context: vscode.ExtensionContext, staged: boolean, repoPath?: string): Promise<void> {
+		try {
+			const repositories = await GitService.getRepositories();
+			const repoRoot = repoPath || repositories[0]?.repoRoot;
+			const stage = staged ? 'staged' : 'unstaged';
+
+			// Check cache first
+			const cachedEntry = this._cache.get(repoRoot, stage);
+			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath)) {
+				this._outputChannel.appendLine(`Using cached ${stage} diff for ${path.basename(repoRoot)}`);
+				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
+				return;
+			}
+
+			// Generate new content
+			await this.generateAndShowDiff(context, repoRoot, stage);
+		} catch (error: any) {
+			vscode.window.showErrorMessage(`Failed to open ${staged ? 'staged' : 'unstaged'} changes: ${error.message}`);
+		}
+	}
+
+	/**
+	 * Refreshes a diff view by invalidating cache and generating new content
+	 */
+	private async refreshDiffView(context: vscode.ExtensionContext, staged: boolean, repoPath?: string): Promise<void> {
+		try {
+			const repositories = await GitService.getRepositories();
+			const repoRoot = repoPath || repositories[0]?.repoRoot;
+			const stage = staged ? 'staged' : 'unstaged';
+
+			// Invalidate cache
+			this._cache.invalidate(repoRoot, stage);
+			this._outputChannel.appendLine(`Cache invalidated for ${stage} diff in ${path.basename(repoRoot)}`);
+
+			// Generate new content
+			await this.generateAndShowDiff(context, repoRoot, stage);
+		} catch (error: any) {
+			vscode.window.showErrorMessage(`Failed to refresh ${staged ? 'staged' : 'unstaged'} changes: ${error.message}`);
+		}
+	}
+
+	/**
+	 * Generates and shows diff content, caching the result
+	 */
+	private async generateAndShowDiff(
+		context: vscode.ExtensionContext,
+		repoRoot: string,
+		stage: 'staged' | 'unstaged'
+	): Promise<void> {
+		const startTime = Date.now();
+
+		await vscode.window.withProgress({
+			location: vscode.ProgressLocation.Notification,
+			title: `Generating ${stage} DiffGraph...`,
+			cancellable: false
+		}, async (progress) => {
+			try {
+				// Build temp file path
+				const htmlFilePath = this.buildTempFilePath(repoRoot, stage);
+
+				// Call CLI via CliService
+				const cliCommand = this.setupCliCommand(htmlFilePath, context, stage === 'staged');
+				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
+
+				// Log output
+				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
+				this.logOutput(cmdString, stdout, stderr);
+
+				// Cache the result
+				this._cache.set(repoRoot, stage, htmlFilePath);
+
+				// Show notification
+				this._notificationService.sendOperationComplete(
+					`${stage.charAt(0).toUpperCase() + stage.slice(1)} DiffGraph`,
+					path.basename(repoRoot),
+					{ startTime }
+				);
+
+				// Show content
+				await this.showWebviewWithContent(htmlFilePath, stage);
+			} catch (error: any) {
+				throw error;
+			}
+		});
+	}
+
+	/**
+	 * Builds a temporary file path for the HTML output
+	 */
+	private buildTempFilePath(repoRoot: string, stage: string): string {
+		const repoName = path.basename(repoRoot);
+		const timestamp = Date.now();
+		return path.join(os.tmpdir(), `wildest-${repoName}-${stage}-${timestamp}.html`);
+	}
+
+	/**
+	 * Sets up CLI command with appropriate arguments
+	 */
+	private setupCliCommand(htmlFilePath: string, context: vscode.ExtensionContext, staged: boolean): CliCommand {
+		let env = Object.assign({}, process.env);
+		const isDevMode = process.env.WILDEST_DEV_MODE === '1' || process.env.NODE_ENV === 'development';
+
+		if (isDevMode) {
+			return this.getDevCommand(htmlFilePath, env, staged);
+		} else {
+			return this.getProdCommand(htmlFilePath, env, context, staged);
+		}
+	}
+
+	private getDevCommand(htmlFilePath: string, env: NodeJS.ProcessEnv, staged: boolean): CliCommand {
+		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
+		const venvBin = path.join(venvPath, 'bin');
+		env = Object.assign({}, env, {
+			PATH: `${venvBin}${path.delimiter}${env.PATH}`,
+			VIRTUAL_ENV: venvPath
+		});
+
+		const args = ['diff', '--output', htmlFilePath, '--no-open'];
+		if (staged) {
+			args.push('--staged');
+		}
+
+		return {
+			executable: 'wild',
+			args,
+			env
+		};
+	}
+
+	private getProdCommand(
+		htmlFilePath: string,
+		env: NodeJS.ProcessEnv,
+		context: vscode.ExtensionContext,
+		staged: boolean
+	): CliCommand {
+		const wildBinary = this.getBinaryPath(context);
+
+		const args = ['diff', '--output', htmlFilePath, '--no-open'];
+		if (staged) {
+			args.push('--staged');
+		}
+
+		return {
+			executable: wildBinary,
+			args,
+			env
+		};
+	}
+
+	private getBinaryPath(context: vscode.ExtensionContext): string {
+		const platform = os.platform();
+		const arch = os.arch();
+
+		let binaryName = '';
+		if (platform === 'darwin' && arch === 'arm64') {
+			binaryName = 'wild-macos-arm64';
+		} else if (platform === 'darwin') {
+			binaryName = 'wild-macos-x64';
+		} else if (platform === 'linux') {
+			binaryName = 'wild-linux-x64';
+		} else if (platform === 'win32') {
+			binaryName = 'wild-win.exe';
+		} else {
+			throw new Error(`Unsupported platform: ${platform} ${arch}`);
+		}
+
+		const binaryPath = path.join(context.extensionPath, 'bin', binaryName);
+
+		if (!fs.existsSync(binaryPath)) {
+			throw new Error(`Binary not found: ${binaryPath}`);
+		}
+
+		return binaryPath;
+	}
+
+	/**
+	 * Shows the HTML content in the existing diffGraphView webview
+	 */
+	private async showWebviewWithContent(htmlFilePath: string, stage: string): Promise<void> {
+		if (this._diffGraphViewProvider) {
+			await this._diffGraphViewProvider.showDiffGraph(htmlFilePath);
+		} else {
+			vscode.window.showErrorMessage('DiffGraphView provider not available');
+		}
+	}
+
+	/**
+	 * Logs CLI command output
+	 */
+	private logOutput(command: string, stdout: string, stderr: string): void {
+		this._outputChannel.appendLine(`Executed: ${command}`);
+		this._outputChannel.appendLine('CLI stdout:\n' + stdout);
+		if (stderr) {
+			this._outputChannel.appendLine('CLI stderr:\n' + stderr);
+		}
+		this._outputChannel.show(true);
+	}
+}

@@ -123,7 +123,7 @@ export class DiffService {
 
 		await vscode.window.withProgress({
 			location: vscode.ProgressLocation.Notification,
-			title: `Generating ${stage} DiffGraph...`,
+			title: `Generating ${stage} DiffGraph for ${path.basename(repoRoot)}...`,
 			cancellable: false
 		}, async (progress) => {
 			try {

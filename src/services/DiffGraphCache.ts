@@ -22,9 +22,9 @@ import { DiffGraphCacheEntry, DiffGraphCacheKey } from '../utils/types';
 
 export class DiffGraphCache {
     private static _instance: DiffGraphCache;
-    private _cache: Map<string, DiffGraphCacheEntry> = new Map();
+    private _cache: Map<DiffGraphCacheKey, DiffGraphCacheEntry> = new Map();
 
-    private constructor() {}
+    private constructor() { }
 
     /**
      * Get the singleton instance of DiffGraphCache
@@ -39,7 +39,7 @@ export class DiffGraphCache {
     /**
      * Create a cache key from repository root and stage status
      */
-    private createKey(repoRoot: string, stage: 'staged' | 'unstaged'): string {
+    private createKey(repoRoot: string, stage: 'staged' | 'unstaged'): DiffGraphCacheKey {
         return `${repoRoot}:${stage}`;
     }
 
@@ -106,7 +106,7 @@ export class DiffGraphCache {
     /**
      * Get all cache keys (useful for debugging)
      */
-    public getKeys(): string[] {
+    public getKeys(): DiffGraphCacheKey[] {
         return Array.from(this._cache.keys());
     }
 

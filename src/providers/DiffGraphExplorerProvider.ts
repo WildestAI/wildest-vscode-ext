@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { ChangesViewNode } from '../utils/types';
 
 export class DiffGraphExplorerProvider implements vscode.TreeDataProvider<ChangesViewNode> {
@@ -123,7 +124,7 @@ export class DiffGraphExplorerProvider implements vscode.TreeDataProvider<Change
 		// Multiple repos - show repo nodes
 		console.log('WildestAI: Multiple repos, returning repo nodes');
 		return this.repositories.map((repoPath, index) => {
-			const repoName = repoPath.split('/').pop() || `Repository ${index + 1}`;
+			const repoName = path.basename(repoPath) || `Repository ${index + 1}`;
 			return {
 				id: `repo-${index}`,
 				label: repoName,

@@ -37,6 +37,9 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.registerTreeDataProvider('wildestai.changesView', changesProvider)
 	);
+	context.subscriptions.push(
+		vscode.window.registerTreeDataProvider('wildestai.changesViewInSCM', changesProvider)
+	);
 
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.refreshChangesView', () => {
 		changesProvider.updateRepositories();

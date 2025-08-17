@@ -120,6 +120,7 @@ export class DiffService {
 		stage: 'staged' | 'unstaged'
 	): Promise<void> {
 		const startTime = Date.now();
+		await this.showLoadingScreen();
 
 		await vscode.window.withProgress({
 			location: vscode.ProgressLocation.Notification,
@@ -243,6 +244,15 @@ export class DiffService {
 		}
 
 		return binaryPath;
+	}
+
+	/**
+	 * Shows the loading screen in the webview
+	 */
+	private async showLoadingScreen(): Promise<void> {
+		if (this._diffGraphViewProvider) {
+			await this._diffGraphViewProvider.showLoadingScreen();
+		}
 	}
 
 	/**

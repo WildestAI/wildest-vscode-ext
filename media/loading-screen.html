@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading DiffGraph</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--vscode-editor-background);
+            color: var(--vscode-foreground);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .loading-container {
+            text-align: center;
+            max-width: 300px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--vscode-progressBar-background);
+            border-top: 4px solid var(--vscode-progressBar-foreground);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--vscode-foreground);
+        }
+
+        .loading-subtitle {
+            font-size: 14px;
+            color: var(--vscode-descriptionForeground);
+            margin-bottom: 20px;
+        }
+
+        .loading-steps {
+            text-align: left;
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            line-height: 1.5;
+        }
+
+        .step {
+            margin: 4px 0;
+            padding-left: 16px;
+            position: relative;
+        }
+
+        .step:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: var(--vscode-progressBar-foreground);
+        }
+
+        .wildest-logo {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--vscode-textLink-foreground);
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-container">
+        <div class="wildest-logo">WildestAI</div>
+        <div class="spinner"></div>
+        <div class="loading-title">Generating DiffGraph</div>
+        <div class="loading-subtitle">Analyzing your code changes...</div>
+        <div class="loading-steps">
+            <div class="step">Detecting changes</div>
+            <div class="step">Processing diffs</div>
+            <div class="step">Building visualization</div>
+            <div class="step">Optimizing layout</div>
+        </div>
+    </div>
+</body>
+</html>

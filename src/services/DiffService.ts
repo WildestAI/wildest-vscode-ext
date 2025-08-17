@@ -229,6 +229,8 @@ export class DiffService {
 			binaryName = 'wild-macos-arm64';
 		} else if (platform === 'darwin') {
 			binaryName = 'wild-macos-x64';
+		} else if (platform === 'linux' && arch === 'arm64') {
+			binaryName = 'wild-linux-arm64';
 		} else if (platform === 'linux') {
 			binaryName = 'wild-linux-x64';
 		} else if (platform === 'win32') {
@@ -241,6 +243,15 @@ export class DiffService {
 
 		if (!fs.existsSync(binaryPath)) {
 			throw new Error(`Binary not found: ${binaryPath}`);
+		}
+
+		// On POSIX systems, ensure the binary has execute permission
+		if (platform !== 'win32') {
+			try {
+				fs.accessSync(binaryPath, fs.constants.X_OK);
+			} catch {
+				throw new Error(`Binary is not executable: ${binaryPath}`);
+			}
 		}
 
 		return binaryPath;

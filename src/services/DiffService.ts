@@ -156,7 +156,8 @@ export class DiffService {
 				const htmlFilePath = this.buildTempFilePath(repoRoot, `commit-${commitHash}`);
 
 				// Call CLI via CliService with commit range
-				const cliCommand = this.setupCommitCliCommand(htmlFilePath, context, commitHash);
+				const args = ['diff', `${commitHash}~1..${commitHash}`, '--output', htmlFilePath, '--no-open'];
+				const cliCommand = CliService.setupCommand(args, context);
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
 
 				// Log output
@@ -202,7 +203,11 @@ export class DiffService {
 				const htmlFilePath = this.buildTempFilePath(repoRoot, stage);
 
 				// Call CLI via CliService
-				const cliCommand = this.setupCliCommand(htmlFilePath, context, stage === 'staged');
+				const args: string[] = ['diff', '--output', htmlFilePath, '--no-open'];
+				if (stage === 'staged') {
+					args.push('--staged');
+				}
+				const cliCommand = CliService.setupCommand(args, context);
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
 
 				// Log output
@@ -234,145 +239,6 @@ export class DiffService {
 		const repoName = path.basename(repoRoot);
 		const timestamp = Date.now();
 		return path.join(os.tmpdir(), `wildest-${repoName}-${stage}-${timestamp}.html`);
-	}
-
-	/**
-	 * Sets up CLI command with appropriate arguments
-	 */
-	private setupCliCommand(htmlFilePath: string, context: vscode.ExtensionContext, staged: boolean): CliCommand {
-		let env = Object.assign({}, process.env);
-		const isDevMode = process.env.WILDEST_DEV_MODE === '1' || process.env.NODE_ENV === 'development';
-
-		if (isDevMode) {
-			return this.getDevCommand(htmlFilePath, env, staged);
-		} else {
-			return this.getProdCommand(htmlFilePath, env, context, staged);
-		}
-	}
-
-	/**
-	 * Sets up CLI command for commit diff
-	 */
-	private setupCommitCliCommand(htmlFilePath: string, context: vscode.ExtensionContext, commitHash: string): CliCommand {
-		let env = Object.assign({}, process.env);
-		const isDevMode = process.env.WILDEST_DEV_MODE === '1' || process.env.NODE_ENV === 'development';
-
-		if (isDevMode) {
-			return this.getDevCommitCommand(htmlFilePath, env, commitHash);
-		} else {
-			return this.getProdCommitCommand(htmlFilePath, env, context, commitHash);
-		}
-	}
-
-	private getDevCommand(htmlFilePath: string, env: NodeJS.ProcessEnv, staged: boolean): CliCommand {
-		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
-		const venvBin = path.join(venvPath, 'bin');
-		env = Object.assign({}, env, {
-			PATH: `${venvBin}${path.delimiter}${env.PATH}`,
-			VIRTUAL_ENV: venvPath
-		});
-
-		const args = ['diff', '--output', htmlFilePath, '--no-open'];
-		if (staged) {
-			args.push('--staged');
-		}
-
-		return {
-			executable: 'wild',
-			args,
-			env
-		};
-	}
-
-	private getProdCommand(
-		htmlFilePath: string,
-		env: NodeJS.ProcessEnv,
-		context: vscode.ExtensionContext,
-		staged: boolean
-	): CliCommand {
-		const wildBinary = this.getBinaryPath(context);
-
-		const args = ['diff', '--output', htmlFilePath, '--no-open'];
-		if (staged) {
-			args.push('--staged');
-		}
-
-		return {
-			executable: wildBinary,
-			args,
-			env
-		};
-	}
-
-	private getDevCommitCommand(htmlFilePath: string, env: NodeJS.ProcessEnv, commitHash: string): CliCommand {
-		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
-		const venvBin = path.join(venvPath, 'bin');
-		env = Object.assign({}, env, {
-			PATH: `${venvBin}${path.delimiter}${env.PATH}`,
-			VIRTUAL_ENV: venvPath
-		});
-
-		const args = ['diff', `${commitHash}~1..${commitHash}`, '--output', htmlFilePath, '--no-open'];
-
-		return {
-			executable: 'wild',
-			args,
-			env
-		};
-	}
-
-	private getProdCommitCommand(
-		htmlFilePath: string,
-		env: NodeJS.ProcessEnv,
-		context: vscode.ExtensionContext,
-		commitHash: string
-	): CliCommand {
-		const wildBinary = this.getBinaryPath(context);
-
-		const args = ['diff', `${commitHash}~1..${commitHash}`, '--output', htmlFilePath, '--no-open'];
-
-		return {
-			executable: wildBinary,
-			args,
-			env
-		};
-	}
-
-	private getBinaryPath(context: vscode.ExtensionContext): string {
-		const platform = os.platform();
-		const arch = os.arch();
-
-		let binaryName = '';
-		if (platform === 'darwin' && arch === 'arm64') {
-			binaryName = 'wild-macos-arm64';
-		} else if (platform === 'darwin') {
-			binaryName = 'wild-macos-x64';
-		} else if (platform === 'linux' && arch === 'arm64') {
-			binaryName = 'wild-linux-arm64';
-		} else if (platform === 'linux') {
-			binaryName = 'wild-linux-x64';
-		} else if (platform === 'win32') {
-			binaryName = 'wild-win.exe';
-		} else {
-			throw new Error(`Unsupported platform: ${platform} ${arch}`);
-		}
-
-		const binaryPath = path.join(context.extensionPath, 'bin', binaryName);
-
-		if (!fs.existsSync(binaryPath)) {
-			throw new Error(`Binary not found: ${binaryPath}`);
-		}
-
-		// On POSIX systems, ensure the binary has execute permission
-		if (platform !== 'win32') {
-			try {
-				fs.accessSync(binaryPath, fs.constants.X_OK);
-			} catch {
-				throw new Error(`Binary is not executable: ${binaryPath}`);
-			}
-		}
-
-		return binaryPath;
 	}
 
 	/**

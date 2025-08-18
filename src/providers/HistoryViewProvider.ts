@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
-import * as os from 'os';
-import * as path from 'path';
-import * as fs from 'fs';
+import * as childProcess from 'child_process';
+import * as util from 'util';
 import { GitService } from '../services/GitService';
 import { CliService } from '../services/CliService';
 import { GitCommit, GitGraphNode, CliCommand } from '../utils/types';
@@ -50,7 +49,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 		try {
 			this._view.webview.html = this.getLoadingHtml();
-			
+
 			const repositories = await GitService.getRepositories();
 			if (repositories.length === 0) {
 				this._view.webview.html = this.getNoRepoHtml();
@@ -59,86 +58,61 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 			// For now, use the first repository
 			const repoRoot = repositories[0].repoRoot;
-			const commits = await this.getGitCommits(repoRoot);
-			const graphData = this.buildGraphData(commits);
-			
+			const { commits, graphLines } = await this.getGitCommits(repoRoot);
+			const graphData = this.buildGraphData(commits, graphLines);
+
 			this._view.webview.html = this.getHistoryHtml(graphData, repoRoot);
 		} catch (error: any) {
 			this._view.webview.html = this.getErrorHtml(error.message);
 		}
 	}
 
-	private async getGitCommits(repoPath: string): Promise<GitCommit[]> {
-		const cliCommand = this.setupLogCliCommand();
-		
+	private async getGitCommits(repoPath: string): Promise<{ commits: GitCommit[], graphLines: string[] }> {
 		try {
-			// Create a simple progress object for CliService
-			const progress = {
-				report: (value: { message: string }) => {
-					// Optional: could add progress reporting here
-				}
-			};
-			
-			const { stdout } = await CliService.execute(cliCommand, repoPath, progress);
-			return this.parseGitLog(stdout);
+			// Get git log with graph and detailed format combined
+			const args = ['log', '--graph', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'];
+			const command = CliService.setupCommand(args, this._context);
+			const { stdout } = await CliService.execute(command, repoPath);
+
+			return this.parseGitGraphLog(stdout);
 		} catch (error: any) {
 			throw new Error(`Failed to get git history: ${error.message}`);
 		}
 	}
 
-	private setupLogCliCommand(): CliCommand {
-		let env = Object.assign({}, process.env);
-		const isDevMode = process.env.WILDEST_DEV_MODE === '1' || process.env.NODE_ENV === 'development';
+	private parseGitGraphLog(gitOutput: string): { commits: GitCommit[], graphLines: string[] } {
+		const commits: GitCommit[] = [];
+		const graphLines: string[] = [];
+		const lines = gitOutput.split('\n');
 
-		if (isDevMode) {
-			const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
-			const venvBin = path.join(venvPath, 'bin');
-			env = Object.assign({}, env, {
-				PATH: `${venvBin}${path.delimiter}${env.PATH}`,
-				VIRTUAL_ENV: venvPath
-			});
+		for (const line of lines) {
+			// Extract graph part (everything before the commit hash)
+			const commitMatch = line.match(/^(.*?)([a-f0-9]{40}\|.*)/);
+			if (commitMatch) {
+				const [, graphPart, commitPart] = commitMatch;
+				graphLines.push(graphPart);
 
-			return {
-				executable: 'wild',
-				args: ['log', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'],
-				env
-			};
-		} else {
-			const wildBinary = this.getBinaryPath();
-			return {
-				executable: wildBinary,
-				args: ['log', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'],
-				env
-			};
-		}
-	}
+				// Parse commit data
+				const parts = commitPart.split('|');
+				if (parts.length >= 7) {
+					const [hash, shortHash, author, email, date, subject, parents, refs] = parts;
 
-	private getBinaryPath(): string {
-		const platform = os.platform();
-		const arch = os.arch();
-
-		let binaryName = '';
-		if (platform === 'darwin' && arch === 'arm64') {
-			binaryName = 'wild-macos-arm64';
-		} else if (platform === 'darwin') {
-			binaryName = 'wild-macos-x64';
-		} else if (platform === 'linux' && arch === 'arm64') {
-			binaryName = 'wild-linux-arm64';
-		} else if (platform === 'linux') {
-			binaryName = 'wild-linux-x64';
-		} else if (platform === 'win32') {
-			binaryName = 'wild-win.exe';
-		} else {
-			throw new Error(`Unsupported platform: ${platform} ${arch}`);
+					commits.push({
+						hash: hash.trim(),
+						shortHash: shortHash.trim(),
+						author: author.trim(),
+						email: email.trim(),
+						date: new Date(date.trim()),
+						message: subject.trim(),
+						subject: subject.trim(),
+						parents: parents ? parents.trim().split(' ').filter(p => p) : [],
+						refs: refs ? refs.trim().split(', ').filter(r => r) : []
+					});
+				}
+			}
 		}
 
-		const binaryPath = path.join(this._context.extensionPath, 'bin', binaryName);
-
-		if (!fs.existsSync(binaryPath)) {
-			throw new Error(`Binary not found: ${binaryPath}`);
-		}
-
-		return binaryPath;
+		return { commits, graphLines };
 	}
 
 	private parseGitLog(gitOutput: string): GitCommit[] {
@@ -158,7 +132,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			const [hash, shortHash, author, email, date, subject, parents, refs] = parts;
-			
+
 			commits.push({
 				hash: hash.trim(),
 				shortHash: shortHash.trim(),
@@ -175,15 +149,43 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		return commits;
 	}
 
-	private buildGraphData(commits: GitCommit[]): GitGraphNode[] {
+	private buildGraphData(commits: GitCommit[], graphLines: string[]): GitGraphNode[] {
 		const colors = ['#007acc', '#f44747', '#ffcc00', '#00aa00', '#aa00ff', '#ff6600', '#00aaaa'];
-		
-		return commits.map((commit, index) => ({
-			commit,
-			x: index % 3, // Simple branching visualization
-			color: colors[index % colors.length],
-			connections: []
-		}));
+
+		return commits.map((commit, index) => {
+			const graphLine = graphLines[index] || '';
+			const branchPosition = this.calculateBranchPosition(graphLine);
+
+			return {
+				commit,
+				x: branchPosition.x,
+				color: colors[branchPosition.branch % colors.length],
+				connections: branchPosition.connections
+			};
+		});
+	}
+
+	private calculateBranchPosition(graphLine: string): { x: number, branch: number, connections: any[] } {
+		// Analyze git graph symbols to determine branch position
+		const cleanLine = graphLine.replace(/\s/g, '');
+		let x = 0;
+		let branch = 0;
+
+		// Find the commit position (marked by * or |)
+		for (let i = 0; i < cleanLine.length; i++) {
+			const char = cleanLine[i];
+			if (char === '*') {
+				x = i * 20; // Position in pixels
+				branch = i;
+				break;
+			} else if (char === '|' && i === 0) {
+				x = i * 20;
+				branch = i;
+				break;
+			}
+		}
+
+		return { x, branch, connections: [] };
 	}
 
 	private getLoadingHtml(): string {
@@ -280,7 +282,11 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private getHistoryHtml(graphData: GitGraphNode[], repoPath: string): string {
-		const commitsJson = JSON.stringify(graphData.map(node => node.commit));
+		const commitsJson = JSON.stringify(graphData.map(node => ({
+			...node.commit,
+			x: node.x,
+			color: node.color
+		})));
 		const repoName = repoPath.split('/').pop() || 'Unknown';
 
 		return `<!DOCTYPE html>
@@ -331,32 +337,34 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 						background-color: var(--vscode-list-activeSelectionBackground);
 					}
 					.commit-graph {
-						width: 80px;
+						width: 200px;
 						flex-shrink: 0;
-						display: flex;
-						align-items: center;
 						position: relative;
-						padding: 0 10px;
+						height: 40px;
+						margin-right: 10px;
 					}
 					.commit-dot {
-						width: 10px;
-						height: 10px;
+						width: 8px;
+						height: 8px;
 						border-radius: 50%;
-						background-color: var(--vscode-charts-blue);
-						border: 2px solid var(--vscode-editor-background);
-						position: relative;
-						z-index: 2;
+						position: absolute;
+						top: 50%;
+						transform: translateY(-50%);
+						z-index: 10;
+						border: 1px solid var(--vscode-editor-background);
 					}
 					.graph-line {
 						position: absolute;
-						width: 2px;
-						background-color: var(--vscode-charts-blue);
-						left: 50%;
-						transform: translateX(-50%);
+						height: 2px;
+						top: 50%;
+						transform: translateY(-50%);
+						z-index: 1;
 					}
 					.graph-line.vertical {
-						height: 100%;
+						width: 2px;
+						height: 40px;
 						top: 0;
+						transform: none;
 					}
 					.commit-info {
 						flex: 1;
@@ -417,8 +425,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					}
 
 					function onCommitClick(commitHash) {
-						vscode.postMessage({ 
-							command: 'commitClicked', 
+						vscode.postMessage({
+							command: 'commitClicked',
 							commitHash: commitHash,
 							repoPath: repoPath
 						});
@@ -435,16 +443,32 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 							const graph = document.createElement('div');
 							graph.className = 'commit-graph';
-							
-							// Add vertical line for graph continuity (except for last commit)
+
+							// Draw vertical line to next commit (if not last)
 							if (index < commits.length - 1) {
-								const line = document.createElement('div');
-								line.className = 'graph-line vertical';
-								graph.appendChild(line);
+								const nextCommit = commits[index + 1];
+								const verticalLine = document.createElement('div');
+								verticalLine.className = 'graph-line vertical';
+								verticalLine.style.backgroundColor = commit.color;
+								verticalLine.style.left = commit.x + 'px';
+								graph.appendChild(verticalLine);
 							}
-							
+
+							// Draw horizontal line for merges/branches
+							if (commit.parents && commit.parents.length > 1) {
+								const horizontalLine = document.createElement('div');
+								horizontalLine.className = 'graph-line';
+								horizontalLine.style.backgroundColor = commit.color;
+								horizontalLine.style.left = (commit.x - 20) + 'px';
+								horizontalLine.style.width = '40px';
+								graph.appendChild(horizontalLine);
+							}
+
+							// Position the commit dot
 							const dot = document.createElement('div');
 							dot.className = 'commit-dot';
+							dot.style.backgroundColor = commit.color;
+							dot.style.left = commit.x + 'px';
 							graph.appendChild(dot);
 
 							const info = document.createElement('div');
@@ -456,15 +480,15 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 							const meta = document.createElement('div');
 							meta.className = 'commit-meta';
-							
+
 							const hash = document.createElement('span');
 							hash.className = 'commit-hash';
 							hash.textContent = commit.shortHash;
-							
-							const dateStr = new Date(commit.date).toLocaleDateString() + ' ' + 
+
+							const dateStr = new Date(commit.date).toLocaleDateString() + ' ' +
 											new Date(commit.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 							const author = document.createTextNode(commit.author + ' • ' + dateStr);
-							
+
 							meta.appendChild(hash);
 							meta.appendChild(author);
 

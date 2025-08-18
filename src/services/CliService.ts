@@ -6,22 +6,22 @@ import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 
 export class CliService {
-	public static setupCommand(htmlFilePath: string, context: vscode.ExtensionContext): CliCommand {
+	public static setupCommand(args: string[] = [], context: vscode.ExtensionContext): CliCommand {
 		let env = Object.assign({}, process.env);
 		const isDevMode = process.env.WILDEST_DEV_MODE === '1' ||
 			process.env.NODE_ENV === 'development';
 
 		if (isDevMode) {
-			return this.getDevCommand(htmlFilePath, env);
+			return this.getDevCommand(args, env);
 		} else {
-			return this.getProdCommand(htmlFilePath, env, context);
+			return this.getProdCommand(args, env, context);
 		}
 	}
 
 	public static async execute(
 		command: CliCommand,
 		repoRoot: string,
-		progress: vscode.Progress<{ message: string }>
+		progress?: vscode.Progress<{ message: string }>
 	): Promise<CliOutput> {
 		let cliStdout = '', cliStderr = '';
 		const startTime = Date.now();
@@ -34,7 +34,7 @@ export class CliService {
 			const secs = elapsed % 60;
 			const elapsedStr = `Elapsed: ${mins}:${secs.toString().padStart(2, '0')}`;
 			const message = lastCliLine ? `${elapsedStr} | ${lastCliLine}` : elapsedStr;
-			progress.report({ message });
+			progress?.report({ message });
 		}, 1000);
 
 		try {
@@ -75,8 +75,8 @@ export class CliService {
 		return { stdout: cliStdout, stderr: cliStderr };
 	}
 
-	private static getDevCommand(htmlFilePath: string, env: NodeJS.ProcessEnv): CliCommand {
-		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
+	private static getDevCommand(args: string[] = [], env: NodeJS.ProcessEnv): CliCommand {
+		const venvPath = process.env.WILDEST_VENV_PATH || `..${path.delimiter}DiffGraph-CLI${path.delimiter}.venv`;
 		const venvBin = path.join(venvPath, 'bin');
 		env = Object.assign({}, env, {
 			PATH: `${venvBin}${path.delimiter}${env.PATH}`,
@@ -84,20 +84,20 @@ export class CliService {
 		});
 		return {
 			executable: 'wild',
-			args: ['diff', '--output', htmlFilePath, '--no-open'],
+			args: args,
 			env
 		};
 	}
 
 	private static getProdCommand(
-		htmlFilePath: string,
+		args: string[] = [],
 		env: NodeJS.ProcessEnv,
-		context: vscode.ExtensionContext
+		context: vscode.ExtensionContext,
 	): CliCommand {
 		const wildBinary = this.getBinaryPath(context);
 		return {
 			executable: wildBinary,
-			args: ['diff', '--output', htmlFilePath, '--no-open'],
+			args: args,
 			env
 		};
 	}

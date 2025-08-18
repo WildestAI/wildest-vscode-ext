@@ -14,15 +14,41 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import * as vscode from 'vscode';
+import { DiffGraphExplorerProvider } from './providers/DiffGraphExplorerProvider';
 import { DiffGraphViewProvider } from './providers/DiffGraphViewProvider';
+import { GraphViewProvider } from './providers/GraphViewProvider';
+import { DiffService } from './services/DiffService';
+import { GitService } from './services/GitService';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	// Register the DiffGraph view provider
-	const provider = new DiffGraphViewProvider(context.extensionUri, context);
+	// Keep the old provider for backwards compatibility with generate command
+	const diffGraphWebViewProvider = new DiffGraphViewProvider(context.extensionUri);
 	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider('wildestai.diffGraphView', provider)
+		vscode.window.registerWebviewViewProvider('wildestai.diffGraphView', diffGraphWebViewProvider)
+	);
+
+	// Register services with provider reference
+	const diffService = new DiffService(context, diffGraphWebViewProvider);
+
+	// Register the Changes webview provider
+	const changesProvider = new DiffGraphExplorerProvider();
+	context.subscriptions.push(
+		vscode.window.registerTreeDataProvider('wildestai.changesView', changesProvider)
+	);
+	context.subscriptions.push(
+		vscode.window.registerTreeDataProvider('wildestai.changesViewInSCM', changesProvider)
+	);
+
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.refreshChangesView', () => {
+		changesProvider.updateRepositories();
+	}));
+
+	// Register the Graph webview provider
+	const graphProvider = new GraphViewProvider(context.extensionUri);
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider('wildestai.graphView', graphProvider)
 	);
 
 	// Register the hello world command
@@ -31,14 +57,38 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 	context.subscriptions.push(helloDisposable);
 
-	// Register command to refresh the DiffGraph
-	const disposableDiffGraph = vscode.commands.registerCommand('wildestai.generate', async () => {
-		// Show and focus the DiffGraph view
-		await vscode.commands.executeCommand('wildestai.diffGraphView.focus');
-		// Trigger a refresh by calling the provider's generate method
-		await provider.generateDiffGraph();
+	// Register legacy commands for backwards compatibility
+	const openChangesDisposable = vscode.commands.registerCommand('wildestai.openChanges', async (treeItemOrRepoPath?: any) => {
+		const repoPath = await GitService.getRepositoryPath(treeItemOrRepoPath);
+		if (repoPath) {
+			await diffService.openChanges(context, repoPath);
+		}
 	});
-	context.subscriptions.push(disposableDiffGraph);
+	context.subscriptions.push(openChangesDisposable);
+
+	const openStagedChangesDisposable = vscode.commands.registerCommand('wildestai.openStagedChanges', async (treeItemOrRepoPath?: any) => {
+		const repoPath = await GitService.getRepositoryPath(treeItemOrRepoPath);
+		if (repoPath) {
+			await diffService.openStagedChanges(context, repoPath);
+		}
+	});
+	context.subscriptions.push(openStagedChangesDisposable);
+
+	const refreshChangesDisposable = vscode.commands.registerCommand('wildestai.refreshChanges', async (treeItemOrRepoPath?: any) => {
+		const repoPath = await GitService.getRepositoryPath(treeItemOrRepoPath);
+		if (repoPath) {
+			await diffService.refreshChanges(context, repoPath);
+		}
+	});
+	context.subscriptions.push(refreshChangesDisposable);
+
+	const refreshStagedChangesDisposable = vscode.commands.registerCommand('wildestai.refreshStagedChanges', async (treeItemOrRepoPath?: any) => {
+		const repoPath = await GitService.getRepositoryPath(treeItemOrRepoPath);
+		if (repoPath) {
+			await diffService.refreshStagedChanges(context, repoPath);
+		}
+	});
+	context.subscriptions.push(refreshStagedChangesDisposable);
 }
 
 // This method is called when your extension is deactivated

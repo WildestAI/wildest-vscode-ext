@@ -6,11 +6,13 @@ WildestAI is a Visual Studio Code extension that enhances your development workf
 
 ## Features
 
-- Generate interactive DiffGraph visualizations for your Git repository
-- Run the `WildestAI: Generate DiffGraph` command to analyze code changes
-- Progress notifications and output channel for CLI feedback
-- Automatic detection of development or production mode
-- macOS native notifications when generation completes
+- **Sidebar Explorer**: Interactive tree view for navigating Git repositories and changes
+- **DiffGraph Visualization**: Generate interactive DiffGraph visualizations displayed in a shared webview
+- **Git Integration**: View and refresh both staged and unstaged changes directly from the sidebar
+- **Multi-repository Support**: Automatic detection and handling of multiple Git repositories in your workspace
+- **Progress Notifications**: Real-time feedback with output channel for CLI operations
+- **Cross-platform Support**: Automatic detection of development or production mode
+- **Native Notifications**: macOS native notifications when generation completes
 
 <!-- Add screenshots or GIFs in the images/ folder if available -->
 
@@ -23,12 +25,35 @@ WildestAI is a Visual Studio Code extension that enhances your development workf
 - For production: The packaged `wild` binary must be present in the `bin/` directory
 
 
+## Sidebar Explorer
+
+The WildestAI extension adds a dedicated sidebar panel to VS Code with two main sections:
+
+### Explorer View
+- **Changes**: Navigate through unstaged changes in your Git repositories
+- **Staged Changes**: View and manage staged changes ready for commit
+- **Graph (experimental)**: Placeholder for upcoming history visualization tools (not yet implemented)
+- **Multi-repository Support**: Automatically detects and displays all Git repositories in your workspace
+
+### Usage
+1. Open the WildestAI sidebar by clicking the WildestAI icon in the Activity Bar
+2. Expand the "Explorer" section to see your repository structure
+3. Click on "Changes" or "Staged Changes" nodes to generate and view diff graphs in the shared webview
+4. Use the refresh commands (right-click context menu) to update and regenerate cached content
+5. View generated graphs in the DiffGraph webview panel
+
 ## Commands
 
 This extension contributes the following commands:
 
+### Core Commands
 - `WildestAI: Hello World` (`wildestai.helloWorld`): Shows a Hello World message
-- `WildestAI: Generate DiffGraph` (`wildestai.generate`): Generates a DiffGraph HTML visualization for your current Git repository
+
+### Explorer Commands
+- `WildestAI: Open Changes` (`wildestai.openChanges`): Generate and display unstaged changes in the DiffGraph webview
+- `WildestAI: Open Staged Changes` (`wildestai.openStagedChanges`): Generate and display staged changes in the DiffGraph webview
+- `WildestAI: Refresh Changes` (`wildestai.refreshChanges`): Invalidate cache and regenerate unstaged changes
+- `WildestAI: Refresh Staged Changes` (`wildestai.refreshStagedChanges`): Invalidate cache and regenerate staged changes
 
 ## Extension Settings
 
@@ -45,7 +70,6 @@ This extension contributes the following settings:
 ## Known Issues
 
 - No known issues at this time. Please report any bugs or feature requests via the issue tracker.
-- Only the first Git repository in the workspace is used
 - The extension currently supports macOS, Linux, and Windows (see source for supported binaries)
 
 

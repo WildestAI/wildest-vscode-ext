@@ -1,23 +1,15 @@
-import * as vscode from 'vscode';
-import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GitService } from '../services/GitService';
-import { CliService } from '../services/CliService';
+import * as vscode from 'vscode';
 import { NotificationService } from '../services/NotificationService';
-import { CliCommand } from '../utils/types';
 
 export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
-	private _isGenerating: boolean = false;
 	private _outputChannel: vscode.OutputChannel;
-	private _isInitialLoad: boolean = true;
 	private _notificationService: NotificationService;
 
 	constructor(
-		private readonly _extensionUri: vscode.Uri,
-		private readonly _context: vscode.ExtensionContext
-	) {
+		private readonly _extensionUri: vscode.Uri) {
 		this._outputChannel = vscode.window.createOutputChannel('DiffGraph');
 		this._notificationService = new NotificationService(this._outputChannel);
 	}
@@ -32,22 +24,6 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			enableScripts: true,
 			localResourceRoots: [this._extensionUri]
 		};
-
-		// Generate the initial view when it becomes visible
-		webviewView.onDidChangeVisibility(() => {
-			if (webviewView.visible) {
-				if (this._isInitialLoad) {
-					this.generateDiffGraph();
-					this._isInitialLoad = false;
-				}
-			}
-		});
-
-		// If the view is already visible, generate the graph
-		if (webviewView.visible) {
-			this.generateDiffGraph();
-			this._isInitialLoad = false;
-		}
 	}
 
 	public update(htmlContent: string) {
@@ -57,63 +33,64 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
-	public async generateDiffGraph() {
-		if (this._isGenerating) {
-			vscode.window.showInformationMessage('DiffGraph generation is already in progress...');
-			return;
-		}
-
-		this._isGenerating = true;
-		const startTime = Date.now();
-
+	/**
+	 * Shows a loading screen while the diff graph is being generated
+	 */
+	public async showLoadingScreen() {
+		const backupLoadingHtml = '<div style="padding: 20px; text-align: center; color: var(--vscode-foreground);">Loading DiffGraph...</div>';
 		try {
-			const { repoRoot } = await GitService.getRepository();
-			const htmlFilePath = path.join(os.tmpdir(), `diffgraph-output-${Date.now()}.html`);
-			const cliCommand = CliService.setupCommand(htmlFilePath, this._context);
+			const loadingUri = vscode.Uri.joinPath(this._extensionUri, 'media', 'loading-screen.html');
 
-			await this.executeWithProgress(cliCommand, repoRoot, htmlFilePath, startTime);
-		} catch (error: any) {
-			vscode.window.showErrorMessage(error.message);
-		} finally {
-			this._isGenerating = false;
-		}
-	}
-
-	private async executeWithProgress(
-		cliCommand: CliCommand,
-		repoRoot: string,
-		htmlFilePath: string,
-		startTime: number
-	) {
-		await vscode.window.withProgress({
-			location: vscode.ProgressLocation.Notification,
-			title: 'Generating DiffGraph...',
-			cancellable: false
-		}, async (progress) => {
-			try {
-				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
-				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
-				this.logOutput(cmdString, stdout, stderr);
-				this._notificationService.sendOperationComplete(
-					'DiffGraph',
-					path.basename(repoRoot),
-					{ startTime }
-				);
-
-				const htmlContent = fs.readFileSync(htmlFilePath, 'utf8');
-				this.update(htmlContent);
-			} catch (err) {
-				vscode.window.showErrorMessage(`wild failed: ${err}`);
+			if (!fs.existsSync(loadingUri.fsPath)) {
+				console.warn('Loading screen HTML not found, using fallback message.');
+				// Fallback to simple loading message
+				this.update(backupLoadingHtml);
+				return;
 			}
-		});
+
+			const htmlContent = fs.readFileSync(loadingUri.fsPath, 'utf8');
+			this.update(htmlContent);
+
+			// Reveal the view if it's not visible
+			if (this._view && !this._view.visible) {
+				this._view.show?.(true);
+			}
+		} catch (error: any) {
+			console.error('Error showing loading screen:', error);
+			// Fallback to simple loading message
+			this.update(backupLoadingHtml);
+		}
 	}
 
-	private logOutput(command: string, stdout: string, stderr: string) {
-		this._outputChannel.appendLine(`Executed: ${command}`);
-		this._outputChannel.appendLine('CLI stdout:\n' + stdout);
-		if (stderr) {
-			this._outputChannel.appendLine('CLI stderr:\n' + stderr);
+	/**
+	 * Shows the diff graph by loading HTML content from the specified file path
+	 * @param htmlPath - Path to the HTML file to display
+	 */
+	public async showDiffGraph(htmlPath: string) {
+		try {
+			if (!fs.existsSync(htmlPath)) {
+				throw new Error(`HTML file not found: ${htmlPath}`);
+			}
+
+			const htmlContent = await fs.promises.readFile(htmlPath, 'utf8');
+			
+			// Update localResourceRoots to include the HTML file's directory
+			if (this._view) {
+				const htmlDir = vscode.Uri.file(path.dirname(htmlPath));
+				this._view.webview.options = {
+					enableScripts: true,
+					localResourceRoots: [this._extensionUri, htmlDir]
+				};
+			}
+			
+			this.update(htmlContent);
+
+			// Reveal the view if it's not visible
+			if (this._view && !this._view.visible) {
+				this._view.show?.(true);
+			}
+		} catch (error: any) {
+			vscode.window.showErrorMessage(`Failed to show diff graph: ${error.message}`);
 		}
-		this._outputChannel.show(true);
 	}
 }

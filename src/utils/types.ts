@@ -24,3 +24,23 @@ export interface CliOutput {
 	stdout: string;
 	stderr: string;
 }
+
+// DiffGraphCache types
+export interface DiffGraphCacheEntry {
+	/** Path to the generated HTML file */
+	htmlPath: string;
+	/** Timestamp when the cache entry was generated */
+	generatedAt: number;
+}
+
+export type DiffGraphCacheKey = `${string}:staged` | `${string}:unstaged`;
+
+// TreeView node types
+export interface ChangesViewNode {
+	id: string;
+	label: string;
+	type: 'root' | 'repo' | 'repoChanges';
+	children?: ChangesViewNode[];
+	repoPath?: string;
+	contextValue?: string;
+}

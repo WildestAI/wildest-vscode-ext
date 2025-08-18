@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
-import * as childProcess from 'child_process';
-import * as util from 'util';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs';
 import { GitService } from '../services/GitService';
-import { GitCommit, GitGraphNode } from '../utils/types';
+import { CliService } from '../services/CliService';
+import { GitCommit, GitGraphNode, CliCommand } from '../utils/types';
 
 export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'wildestai.historyView';
@@ -10,6 +12,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
+		private readonly _context: vscode.ExtensionContext,
 		private readonly _onCommitClicked: (commitHash: string, repoPath: string) => Promise<void>
 	) { }
 
@@ -66,17 +69,76 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async getGitCommits(repoPath: string): Promise<GitCommit[]> {
-		const execAsync = util.promisify(childProcess.exec);
-
-		const logFormat = '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D';
-		const command = `git log --oneline --decorate --all -n 50 ${logFormat}`;
+		const cliCommand = this.setupLogCliCommand();
 		
 		try {
-			const { stdout } = await execAsync(command, { cwd: repoPath });
+			// Create a simple progress object for CliService
+			const progress = {
+				report: (value: { message: string }) => {
+					// Optional: could add progress reporting here
+				}
+			};
+			
+			const { stdout } = await CliService.execute(cliCommand, repoPath, progress);
 			return this.parseGitLog(stdout);
 		} catch (error: any) {
 			throw new Error(`Failed to get git history: ${error.message}`);
 		}
+	}
+
+	private setupLogCliCommand(): CliCommand {
+		let env = Object.assign({}, process.env);
+		const isDevMode = process.env.WILDEST_DEV_MODE === '1' || process.env.NODE_ENV === 'development';
+
+		if (isDevMode) {
+			const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
+			const venvBin = path.join(venvPath, 'bin');
+			env = Object.assign({}, env, {
+				PATH: `${venvBin}${path.delimiter}${env.PATH}`,
+				VIRTUAL_ENV: venvPath
+			});
+
+			return {
+				executable: 'wild',
+				args: ['log', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'],
+				env
+			};
+		} else {
+			const wildBinary = this.getBinaryPath();
+			return {
+				executable: wildBinary,
+				args: ['log', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'],
+				env
+			};
+		}
+	}
+
+	private getBinaryPath(): string {
+		const platform = os.platform();
+		const arch = os.arch();
+
+		let binaryName = '';
+		if (platform === 'darwin' && arch === 'arm64') {
+			binaryName = 'wild-macos-arm64';
+		} else if (platform === 'darwin') {
+			binaryName = 'wild-macos-x64';
+		} else if (platform === 'linux' && arch === 'arm64') {
+			binaryName = 'wild-linux-arm64';
+		} else if (platform === 'linux') {
+			binaryName = 'wild-linux-x64';
+		} else if (platform === 'win32') {
+			binaryName = 'wild-win.exe';
+		} else {
+			throw new Error(`Unsupported platform: ${platform} ${arch}`);
+		}
+
+		const binaryPath = path.join(this._context.extensionPath, 'bin', binaryName);
+
+		if (!fs.existsSync(binaryPath)) {
+			throw new Error(`Binary not found: ${binaryPath}`);
+		}
+
+		return binaryPath;
 	}
 
 	private parseGitLog(gitOutput: string): GitCommit[] {

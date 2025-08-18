@@ -48,6 +48,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register the History webview provider with commit click callback
 	const historyProvider = new HistoryViewProvider(
 		context.extensionUri,
+		context,
 		async (commitHash: string, repoPath: string) => {
 			await diffService.openCommitDiff(context, commitHash, repoPath);
 		}

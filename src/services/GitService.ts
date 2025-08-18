@@ -26,34 +26,43 @@ export class GitService {
 	/**
 	 * Get repository path from parameter or user selection
 	 */
-	public static async getRepositoryPath(treeItemOrRepoPath?: any): Promise<string | undefined> {
+	public static async getRepositoryPath(treeItemOrRepoPath?: string | { repoPath: string }): Promise<string | undefined> {
 		// Extract repoPath from parameter (string or tree item object)
 		const repoPath = typeof treeItemOrRepoPath === 'string' ? treeItemOrRepoPath : treeItemOrRepoPath?.repoPath;
-		
+
 		if (repoPath) {
 			return repoPath;
 		}
 
 		// No repoPath provided, show quick pick for user to select
-		const repositories = await GitService.getRepositories();
-		
+		let repositories: GitInfo[] = [];
+		try {
+			repositories = await this.getRepositories();
+		} catch (err: any) {
+			vscode.window.showErrorMessage(err?.message ?? 'No Git repositories found');
+			return undefined;
+		}
+
 		if (repositories.length === 0) {
 			vscode.window.showErrorMessage('No Git repositories found');
 			return undefined;
 		}
-		
+
 		if (repositories.length === 1) {
 			return repositories[0].repoRoot;
 		}
 
 		// Show quick pick for multiple repositories
-		const quickPickItems = repositories.map(repo => ({
+		interface RepoQuickPickItem extends vscode.QuickPickItem {
+			repoPath: string;
+		}
+		const quickPickItems: RepoQuickPickItem[] = repositories.map(repo => ({
 			label: path.basename(repo.repoRoot),
 			description: repo.repoRoot,
 			repoPath: repo.repoRoot
 		}));
 
-		const selected = await vscode.window.showQuickPick(quickPickItems, {
+		const selected = await vscode.window.showQuickPick<RepoQuickPickItem>(quickPickItems, {
 			placeHolder: 'Select a repository'
 		});
 

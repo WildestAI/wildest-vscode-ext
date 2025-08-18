@@ -45,11 +45,21 @@ export function activate(context: vscode.ExtensionContext) {
 		changesProvider.updateRepositories();
 	}));
 
-	// Register the History webview provider
-	const historyProvider = new HistoryViewProvider(context.extensionUri);
+	// Register the History webview provider with commit click callback
+	const historyProvider = new HistoryViewProvider(
+		context.extensionUri,
+		async (commitHash: string, repoPath: string) => {
+			await diffService.openCommitDiff(context, commitHash, repoPath);
+		}
+	);
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider('wildestai.historyView', historyProvider)
 	);
+
+	// Register history refresh command
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.refreshHistory', async () => {
+		await historyProvider.refresh();
+	}));
 
 	// Register the hello world command
 	const helloDisposable = vscode.commands.registerCommand('wildestai.helloWorld', () => {

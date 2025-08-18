@@ -68,6 +68,30 @@ export class DiffService {
 	}
 
 	/**
+	 * Opens a commit diff in a webview (for History view)
+	 */
+	public async openCommitDiff(context: vscode.ExtensionContext, commitHash: string, repoPath?: string): Promise<void> {
+		try {
+			const repositories = await GitService.getRepositories();
+			const repoRoot = repoPath || repositories[0]?.repoRoot;
+			const stage = `commit-${commitHash}`;
+
+			// Check cache first
+			const cachedEntry = this._cache.get(repoRoot, stage as any);
+			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath)) {
+				this._outputChannel.appendLine(`Using cached commit diff for ${commitHash}`);
+				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
+				return;
+			}
+
+			// Generate new content
+			await this.generateCommitDiff(context, repoRoot, commitHash);
+		} catch (error: any) {
+			vscode.window.showErrorMessage(`Failed to open commit diff: ${error.message}`);
+		}
+	}
+
+	/**
 	 * Opens a diff view, using cache if available
 	 */
 	private async openDiffView(context: vscode.ExtensionContext, staged: boolean, repoPath?: string): Promise<void> {
@@ -109,6 +133,52 @@ export class DiffService {
 		} catch (error: any) {
 			vscode.window.showErrorMessage(`Failed to refresh ${staged ? 'staged' : 'unstaged'} changes: ${error.message}`);
 		}
+	}
+
+	/**
+	 * Generates and shows commit diff content, caching the result
+	 */
+	private async generateCommitDiff(
+		context: vscode.ExtensionContext,
+		repoRoot: string,
+		commitHash: string
+	): Promise<void> {
+		const startTime = Date.now();
+		await this.showLoadingScreen();
+
+		await vscode.window.withProgress({
+			location: vscode.ProgressLocation.Notification,
+			title: `Generating DiffGraph for commit ${commitHash.substring(0, 7)}...`,
+			cancellable: false
+		}, async (progress) => {
+			try {
+				// Build temp file path
+				const htmlFilePath = this.buildTempFilePath(repoRoot, `commit-${commitHash}`);
+
+				// Call CLI via CliService with commit range
+				const cliCommand = this.setupCommitCliCommand(htmlFilePath, context, commitHash);
+				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
+
+				// Log output
+				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
+				this.logOutput(cmdString, stdout, stderr);
+
+				// Cache the result
+				this._cache.set(repoRoot, `commit-${commitHash}` as any, htmlFilePath);
+
+				// Show notification
+				this._notificationService.sendOperationComplete(
+					`Commit DiffGraph`,
+					`${commitHash.substring(0, 7)} in ${path.basename(repoRoot)}`,
+					{ startTime }
+				);
+
+				// Show content
+				await this.showWebviewWithContent(htmlFilePath, `commit-${commitHash}`);
+			} catch (error: any) {
+				throw error;
+			}
+		});
 	}
 
 	/**
@@ -180,6 +250,20 @@ export class DiffService {
 		}
 	}
 
+	/**
+	 * Sets up CLI command for commit diff
+	 */
+	private setupCommitCliCommand(htmlFilePath: string, context: vscode.ExtensionContext, commitHash: string): CliCommand {
+		let env = Object.assign({}, process.env);
+		const isDevMode = process.env.WILDEST_DEV_MODE === '1' || process.env.NODE_ENV === 'development';
+
+		if (isDevMode) {
+			return this.getDevCommitCommand(htmlFilePath, env, commitHash);
+		} else {
+			return this.getProdCommitCommand(htmlFilePath, env, context, commitHash);
+		}
+	}
+
 	private getDevCommand(htmlFilePath: string, env: NodeJS.ProcessEnv, staged: boolean): CliCommand {
 		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
 		const venvBin = path.join(venvPath, 'bin');
@@ -212,6 +296,40 @@ export class DiffService {
 		if (staged) {
 			args.push('--staged');
 		}
+
+		return {
+			executable: wildBinary,
+			args,
+			env
+		};
+	}
+
+	private getDevCommitCommand(htmlFilePath: string, env: NodeJS.ProcessEnv, commitHash: string): CliCommand {
+		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
+		const venvBin = path.join(venvPath, 'bin');
+		env = Object.assign({}, env, {
+			PATH: `${venvBin}${path.delimiter}${env.PATH}`,
+			VIRTUAL_ENV: venvPath
+		});
+
+		const args = ['diff', `${commitHash}~1..${commitHash}`, '--output', htmlFilePath, '--no-open'];
+
+		return {
+			executable: 'wild',
+			args,
+			env
+		};
+	}
+
+	private getProdCommitCommand(
+		htmlFilePath: string,
+		env: NodeJS.ProcessEnv,
+		context: vscode.ExtensionContext,
+		commitHash: string
+	): CliCommand {
+		const wildBinary = this.getBinaryPath(context);
+
+		const args = ['diff', `${commitHash}~1..${commitHash}`, '--output', htmlFilePath, '--no-open'];
 
 		return {
 			executable: wildBinary,

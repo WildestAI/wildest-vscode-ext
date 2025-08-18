@@ -33,7 +33,7 @@ export interface DiffGraphCacheEntry {
 	generatedAt: number;
 }
 
-export type DiffGraphCacheKey = `${string}:staged` | `${string}:unstaged`;
+export type DiffGraphCacheKey = `${string}:staged` | `${string}:unstaged` | `${string}:commit-${string}`;
 
 // TreeView node types
 export interface ChangesViewNode {
@@ -43,4 +43,30 @@ export interface ChangesViewNode {
 	children?: ChangesViewNode[];
 	repoPath?: string;
 	contextValue?: string;
+}
+
+// Git history types
+export interface GitCommit {
+	hash: string;
+	shortHash: string;
+	author: string;
+	email: string;
+	date: Date;
+	message: string;
+	subject: string;
+	parents: string[];
+	refs: string[];
+}
+
+export interface GitGraphNode {
+	commit: GitCommit;
+	x: number;
+	color: string;
+	connections: GitGraphConnection[];
+}
+
+export interface GitGraphConnection {
+	from: { x: number; y: number };
+	to: { x: number; y: number };
+	color: string;
 }

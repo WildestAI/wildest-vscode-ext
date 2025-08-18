@@ -87,6 +87,11 @@
         "command": "wildestai.refreshStagedChanges",
         "title": "Wildest AI: Refresh Staged Changes",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "wildestai.refreshHistory",
+        "title": "Wildest AI: Refresh History",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -106,6 +111,11 @@
         {
           "command": "wildestai.refreshChangesView",
           "when": "view == wildestai.changesView || view == wildestai.changesViewInSCM",
+          "group": "navigation"
+        },
+        {
+          "command": "wildestai.refreshHistory",
+          "when": "view == wildestai.historyView",
           "group": "navigation"
         }
       ]

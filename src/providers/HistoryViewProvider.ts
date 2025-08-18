@@ -69,7 +69,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		const execAsync = util.promisify(childProcess.exec);
 
 		const logFormat = '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D';
-		const command = `git log --graph --oneline --decorate --all -n 50 ${logFormat}`;
+		const command = `git log --oneline --decorate --all -n 50 ${logFormat}`;
 		
 		try {
 			const { stdout } = await execAsync(command, { cwd: repoPath });
@@ -269,18 +269,32 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 						background-color: var(--vscode-list-activeSelectionBackground);
 					}
 					.commit-graph {
-						width: 60px;
+						width: 80px;
 						flex-shrink: 0;
 						display: flex;
 						align-items: center;
-						justify-content: center;
+						position: relative;
+						padding: 0 10px;
 					}
 					.commit-dot {
-						width: 8px;
-						height: 8px;
+						width: 10px;
+						height: 10px;
 						border-radius: 50%;
 						background-color: var(--vscode-charts-blue);
 						border: 2px solid var(--vscode-editor-background);
+						position: relative;
+						z-index: 2;
+					}
+					.graph-line {
+						position: absolute;
+						width: 2px;
+						background-color: var(--vscode-charts-blue);
+						left: 50%;
+						transform: translateX(-50%);
+					}
+					.graph-line.vertical {
+						height: 100%;
+						top: 0;
 					}
 					.commit-info {
 						flex: 1;
@@ -360,6 +374,13 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 							const graph = document.createElement('div');
 							graph.className = 'commit-graph';
 							
+							// Add vertical line for graph continuity (except for last commit)
+							if (index < commits.length - 1) {
+								const line = document.createElement('div');
+								line.className = 'graph-line vertical';
+								graph.appendChild(line);
+							}
+							
 							const dot = document.createElement('div');
 							dot.className = 'commit-dot';
 							graph.appendChild(dot);
@@ -378,7 +399,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 							hash.className = 'commit-hash';
 							hash.textContent = commit.shortHash;
 							
-							const author = document.createTextNode(commit.author + ' • ' + new Date(commit.date).toLocaleDateString());
+							const dateStr = new Date(commit.date).toLocaleDateString() + ' ' + 
+											new Date(commit.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+							const author = document.createTextNode(commit.author + ' • ' + dateStr);
 							
 							meta.appendChild(hash);
 							meta.appendChild(author);

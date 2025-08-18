@@ -16,7 +16,7 @@
 import * as vscode from 'vscode';
 import { DiffGraphExplorerProvider } from './providers/DiffGraphExplorerProvider';
 import { DiffGraphViewProvider } from './providers/DiffGraphViewProvider';
-import { GraphViewProvider } from './providers/GraphViewProvider';
+import { HistoryViewProvider } from './providers/HistoryViewProvider';
 import { DiffService } from './services/DiffService';
 import { GitService } from './services/GitService';
 
@@ -45,10 +45,10 @@ export function activate(context: vscode.ExtensionContext) {
 		changesProvider.updateRepositories();
 	}));
 
-	// Register the Graph webview provider
-	const graphProvider = new GraphViewProvider(context.extensionUri);
+	// Register the History webview provider
+	const historyProvider = new HistoryViewProvider(context.extensionUri);
 	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider('wildestai.graphView', graphProvider)
+		vscode.window.registerWebviewViewProvider('wildestai.historyView', historyProvider)
 	);
 
 	// Register the hello world command

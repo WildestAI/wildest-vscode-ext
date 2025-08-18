@@ -32,7 +32,7 @@ The WildestAI extension adds a dedicated sidebar panel to VS Code with two main 
 ### Explorer View
 - **Changes**: Navigate through unstaged changes in your Git repositories
 - **Staged Changes**: View and manage staged changes ready for commit
-- **Graph (experimental)**: Placeholder for upcoming history visualization tools (not yet implemented)
+- **History (experimental)**: Placeholder for upcoming history visualization tools (not yet implemented)
 - **Multi-repository Support**: Automatically detects and displays all Git repositories in your workspace
 
 ### Usage

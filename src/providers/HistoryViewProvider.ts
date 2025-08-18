@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
-export class GraphViewProvider implements vscode.WebviewViewProvider {
-	public static readonly viewType = 'wildestai.graphView';
+export class HistoryViewProvider implements vscode.WebviewViewProvider {
+	public static readonly viewType = 'wildestai.historyView';
 
 	constructor(private readonly _extensionUri: vscode.Uri) { }
 
@@ -24,7 +24,7 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
 			<head>
 				<meta charset="UTF-8">
 				<meta name="viewport" content="width=device-width, initial-scale=1.0">
-				<title>Graph</title>
+				<title>History</title>
 				<style>
 					body {
 						font-family: var(--vscode-font-family);
@@ -63,7 +63,7 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
 				<div class="icon">📊</div>
 				<div class="coming-soon">Coming soon...</div>
 				<div class="description">
-					The Graph view will show you the git log and history of your project, allowing you to visualize changes over time.
+					The History view will show you the git log and history of your project, allowing you to visualize changes over time.
 				</div>
 			</body>
 			</html>`;

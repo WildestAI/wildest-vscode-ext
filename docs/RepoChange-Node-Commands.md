@@ -7,7 +7,7 @@ This document describes the implementation of click commands for repoChanges nod
 The extension now provides four new commands to handle diff operations for both staged and unstaged changes:
 
 - `wildestai.openChanges` - Opens unstaged changes in a webview
-- `wildestai.openStagedChanges` - Opens staged changes in a webview  
+- `wildestai.openStagedChanges` - Opens staged changes in a webview
 - `wildestai.refreshChanges` - Refreshes unstaged changes (invalidates cache and regenerates)
 - `wildestai.refreshStagedChanges` - Refreshes staged changes (invalidates cache and regenerates)
 
@@ -91,7 +91,7 @@ Commands are registered in `extension.ts` and declared in `package.json`:
 1. **User clicks repoChanges node command**
 2. **Cache check**: Look for existing cached entry
 3. **Cache hit**: Load HTML directly from cached file via DiffGraphViewProvider
-4. **Cache miss**: 
+4. **Cache miss**:
    - Show loading screen in webview
    - Generate temp file path
    - Execute CLI command with appropriate arguments
@@ -114,7 +114,7 @@ Run tests with: `npm test`
 ### New Files
 - `src/services/DiffService.ts` - Main service for diff operations
 - `src/test/DiffService.test.ts` - Test suite
-- `docs/Leaf-Node-Commands.md` - This documentation
+- `docs/RepoChange-Node-Commands.md` - This documentation
 
 ### Modified Files
 - `src/extension.ts` - Command registration and wiring
@@ -123,7 +123,7 @@ Run tests with: `npm test`
 ## Future Enhancements
 
 1. **TTL Cache**: Add time-based cache expiration
-2. **File Cleanup**: Automatic cleanup of old temp files  
+2. **File Cleanup**: Automatic cleanup of old temp files
 3. **Context Menus**: Add commands to tree view context menus
 4. **Keyboard Shortcuts**: Define default key bindings
 5. **Status Bar**: Show cache status and operation progress

@@ -9,7 +9,7 @@ This document summarizes the completed implementation of Step 4 from the broader
 ### ✅ 1. Command Registration
 **Registered all 4 required commands:**
 - `wildestai.openChanges` - Opens unstaged changes
-- `wildestai.openStagedChanges` - Opens staged changes  
+- `wildestai.openStagedChanges` - Opens staged changes
 - `wildestai.refreshChanges` - Refreshes unstaged changes
 - `wildestai.refreshStagedChanges` - Refreshes staged changes
 
@@ -35,7 +35,7 @@ This document summarizes the completed implementation of Step 4 from the broader
 ```typescript
 export class DiffService {
   async openChanges(context: vscode.ExtensionContext): Promise<void>
-  async openStagedChanges(context: vscode.ExtensionContext): Promise<void>  
+  async openStagedChanges(context: vscode.ExtensionContext): Promise<void>
   async refreshChanges(context: vscode.ExtensionContext): Promise<void>
   async refreshStagedChanges(context: vscode.ExtensionContext): Promise<void>
 }
@@ -47,7 +47,7 @@ export class DiffService {
 - Automatic validation and cleanup
 - Proper invalidation on refresh operations
 
-#### CLI Integration  
+#### CLI Integration
 - Leverages existing `CliService.execute()` method
 - Supports both dev mode (venv) and prod mode (binaries)
 - Proper error handling and progress reporting
@@ -56,8 +56,8 @@ export class DiffService {
 
 #### New Files
 - **`src/services/DiffService.ts`** - Main service implementation
-- **`src/test/DiffService.test.ts`** - Comprehensive test suite  
-- **`docs/Leaf-Node-Commands.md`** - Detailed documentation
+- **`src/test/DiffService.test.ts`** - Comprehensive test suite
+- **`docs/RepoChange-Node-Commands.md`** - Detailed documentation
 - **`docs/Step4-Implementation-Summary.md`** - This summary
 
 #### Modified Files
@@ -79,7 +79,7 @@ export class DiffService {
 - ✅ User-friendly error messages
 
 ### 3. User Experience
-- ✅ Progress notifications during generation  
+- ✅ Progress notifications during generation
 - ✅ Completion notifications with timing
 - ✅ Shared DiffGraph webview with loading states
 - ✅ Proper icons for commands (diff, diff-added, refresh)
@@ -95,7 +95,7 @@ export class DiffService {
 ```
 Extension Test Suite
   ✔ Sample test
-DiffService Test Suite  
+DiffService Test Suite
   ✔ DiffService can be instantiated
   ✔ Cache integration works
   ✔ Cache invalidation works

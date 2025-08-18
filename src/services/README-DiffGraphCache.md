@@ -1,6 +1,6 @@
 # DiffGraphCache
 
-An in-memory cache implementation for storing DiffGraph HTML content to optimize performance by avoiding repeated generation of identical content.
+An in-memory cache implementation for storing DiffGraph HTML file paths to optimize performance by avoiding repeated generation of identical content.
 
 ## Overview
 
@@ -10,7 +10,7 @@ The `DiffGraphCache` is a singleton service that provides caching functionality 
 
 - **In-memory storage**: No disk persistence, fast access
 - **Repository-aware**: Separate cache entries for different repositories
-- **Stage-aware**: Separate cache for staged vs unstaged changes  
+- **Stage-aware**: Separate cache for staged vs unstaged changes
 - **Singleton pattern**: Single instance across the extension
 - **Helper methods**: Easy-to-use `get`, `set`, and `invalidate` operations
 - **Cache management**: Size tracking, key listing, and cleanup utilities
@@ -44,7 +44,7 @@ Check if a cache entry exists without retrieving it.
 #### `size(): number`
 Get the total number of cached entries.
 
-#### `getKeys(): string[]`
+#### `getKeys(): DiffGraphCacheKey[]`
 Get all cache keys (useful for debugging).
 
 #### `clear(): void`

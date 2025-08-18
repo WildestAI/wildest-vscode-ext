@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { NotificationService } from '../services/NotificationService';
 
@@ -71,7 +72,17 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 				throw new Error(`HTML file not found: ${htmlPath}`);
 			}
 
-			const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+			const htmlContent = await fs.promises.readFile(htmlPath, 'utf8');
+			
+			// Update localResourceRoots to include the HTML file's directory
+			if (this._view) {
+				const htmlDir = vscode.Uri.file(path.dirname(htmlPath));
+				this._view.webview.options = {
+					enableScripts: true,
+					localResourceRoots: [this._extensionUri, htmlDir]
+				};
+			}
+			
 			this.update(htmlContent);
 
 			// Reveal the view if it's not visible

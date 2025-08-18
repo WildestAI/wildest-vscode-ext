@@ -78,7 +78,7 @@ if (cached) {
     const htmlContent = fs.readFileSync(cached.htmlPath, 'utf8');
 } else {
     // Generate new DiffGraph and cache it
-    const htmlPath = await generateDiffGraph();
+    const htmlPath = await generateAndShowDiff();
     cache.set('/path/to/repo', 'staged', htmlPath);
 }
 ```

@@ -104,10 +104,6 @@ console.log(`Cache keys: ${cache.getKeys().join(', ')}`);
 cache.clear();
 ```
 
-## Integration with DiffGraphViewProvider
-
-See `src/examples/DiffGraphCacheIntegration.ts` for a comprehensive example of how to integrate this cache with the existing DiffGraphViewProvider.
-
 ## Testing
 
 The cache includes comprehensive unit tests in `src/test/DiffGraphCache.test.ts` covering:

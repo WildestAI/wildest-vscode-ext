@@ -31,7 +31,7 @@ function deepClone(obj) { return obj ? JSON.parse(JSON.stringify(obj)) : obj; }
 
 function createSvgElement(name, attrs = {}) {
 	const el = document.createElementNS('http://www.w3.org/2000/svg', name);
-	for (const [k, v] of Object.entries(attrs)) el.setAttribute(String(k), String(v));
+	for (const [k, v] of Object.entries(attrs)) { el.setAttribute(String(k), String(v)); }
 	return el;
 }
 function createPath(stroke = '#888', strokeWidth = 1) {
@@ -58,7 +58,7 @@ function drawVerticalLine(x, y1, y2, color, strokeWidth = 1) {
 }
 function findLastIndex(nodes, id) {
 	for (let i = nodes.length - 1; i >= 0; i--) {
-		if (nodes[i].id === id) return i;
+		if (nodes[i].id === id) { return i; }
 	}
 	return -1;
 }
@@ -198,7 +198,7 @@ function renderRowGraph(vm) {
 	for (let i = 1; i < (item.parents?.length || 0); i++) {
 		const parentId = item.parents[i];
 		const parentOutIdx = findLastIndex(outputs, parentId);
-		if (parentOutIdx === -1) continue;
+		if (parentOutIdx === -1) { continue; }
 
 		const d = [];
 		const color = outputs[parentOutIdx].color || DEFAULT_REF_COLOR;
@@ -287,29 +287,13 @@ function refresh() {
 	vscode.postMessage({ command: 'refresh' });
 }
 function onCommitClick(hash, repoPath) {
-	if (!hash) return;
+	if (!hash) { return; }
 	vscode.postMessage({ command: 'commitClicked', commitHash: hash, repoPath });
 }
 
 function renderList(commits, repoPath) {
 	const app = document.getElementById('app');
 	app.textContent = '';
-
-	// toolbar
-	const toolbar = document.createElement('div');
-	toolbar.className = 'toolbar';
-	const title = document.createElement('div');
-	title.className = 'title';
-	title.textContent = 'History';
-	const spacer = document.createElement('div');
-	spacer.style.flex = '1 1 auto';
-	const btn = document.createElement('button');
-	btn.className = 'refresh-btn';
-	btn.title = 'Refresh';
-	btn.addEventListener('click', refresh);
-	toolbar.appendChild(title);
-	toolbar.appendChild(spacer);
-	toolbar.appendChild(btn);
 
 	const list = document.createElement('div');
 	list.className = 'commit-list';
@@ -353,7 +337,7 @@ function renderList(commits, repoPath) {
 		author.title = commit.author || '';
 
 		content.appendChild(subject);
-		if (commit.author) content.appendChild(author);
+		if (commit.author) { content.appendChild(author); }
 
 		row.appendChild(graphCol);
 		row.appendChild(content);
@@ -361,7 +345,6 @@ function renderList(commits, repoPath) {
 		list.appendChild(row);
 	}
 
-	app.appendChild(toolbar);
 	app.appendChild(list);
 }
 

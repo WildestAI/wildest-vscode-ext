@@ -33,22 +33,19 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
-	/**
-	 * Shows a loading screen while the diff graph is being generated
-	 */
-	public async showLoadingScreen() {
-		const backupLoadingHtml = '<div style="padding: 20px; text-align: center; color: var(--vscode-foreground);">Loading DiffGraph...</div>';
-		try {
-			const loadingUri = vscode.Uri.joinPath(this._extensionUri, 'media', 'loading-screen.html');
 
-			if (!fs.existsSync(loadingUri.fsPath)) {
-				console.warn('Loading screen HTML not found, using fallback message.');
-				// Fallback to simple loading message
-				this.update(backupLoadingHtml);
+	async showStaticHtmlScreen(htmlFilePath: string, backupHtmlContent: string, name?: string): Promise<void> {
+		try {
+			const staticHtmlUri = vscode.Uri.joinPath(this._extensionUri, 'media', htmlFilePath);
+
+			if (!fs.existsSync(staticHtmlUri.fsPath)) {
+				console.warn(`${name} HTML file not found, using fallback message.`);
+				// Fallback to backup message
+				this.update(backupHtmlContent);
 				return;
 			}
 
-			const htmlContent = fs.readFileSync(loadingUri.fsPath, 'utf8');
+			const htmlContent = fs.readFileSync(staticHtmlUri.fsPath, 'utf8');
 			this.update(htmlContent);
 
 			// Reveal the view if it's not visible
@@ -56,10 +53,25 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 				this._view.show?.(true);
 			}
 		} catch (error: any) {
-			console.error('Error showing loading screen:', error);
-			// Fallback to simple loading message
-			this.update(backupLoadingHtml);
+			console.error(`Error showing ${name} screen:`, error);
+			// Fallback to backup message
+			this.update(backupHtmlContent);
 		}
+	}
+
+	/**
+	 * Shows a loading screen while the diff graph is being generated
+	 */
+	public async showLoadingScreen() {
+		const loadingHtmlPath = 'loading-screen.html';
+		const backupLoadingHtml = '<div style="padding: 20px; text-align: center; color: var(--vscode-foreground);">Loading DiffGraph...</div>';
+		await this.showStaticHtmlScreen(loadingHtmlPath, backupLoadingHtml, 'loading');
+	}
+
+	public async showNoChangesScreen() {
+		const noChangesHtmlPath = 'no-changes-screen.html';
+		const backupNoChangesHtml = '<div style="padding: 20px; text-align: center; color: var(--vscode-foreground);">No changes to display.</div>';
+		await this.showStaticHtmlScreen(noChangesHtmlPath, backupNoChangesHtml, 'no changes');
 	}
 
 	/**
@@ -73,7 +85,7 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			const htmlContent = await fs.promises.readFile(htmlPath, 'utf8');
-			
+
 			// Update localResourceRoots to include the HTML file's directory
 			if (this._view) {
 				const htmlDir = vscode.Uri.file(path.dirname(htmlPath));
@@ -82,7 +94,7 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 					localResourceRoots: [this._extensionUri, htmlDir]
 				};
 			}
-			
+
 			this.update(htmlContent);
 
 			// Reveal the view if it's not visible

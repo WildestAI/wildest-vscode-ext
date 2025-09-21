@@ -258,11 +258,17 @@ export class DiffService {
 	 * Shows the HTML content in the existing diffGraphView webview
 	 */
 	private async showWebviewWithContent(htmlFilePath: string, stage: string): Promise<void> {
-		if (this._diffGraphViewProvider) {
-			await this._diffGraphViewProvider.showDiffGraph(htmlFilePath);
-		} else {
+		if (!this._diffGraphViewProvider) {
 			vscode.window.showErrorMessage('DiffGraphView provider not available');
+			return;
 		}
+		// if htmlFilePath exists
+		if (!fs.existsSync(htmlFilePath)) {
+			// show no changes HTML
+			await this._diffGraphViewProvider.showNoChangesScreen();
+			return;
+		}
+		await this._diffGraphViewProvider.showDiffGraph(htmlFilePath);
 	}
 
 	/**

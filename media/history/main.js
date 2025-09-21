@@ -40,14 +40,15 @@ function createPath(stroke = '#888', strokeWidth = 1) {
 	p.style.strokeWidth = `${strokeWidth}px`;
 	return p;
 }
-function drawCircle(index, radius, strokeWidth, fillColor) {
+function drawCircle(index, radius, strokeWidth = 1, fillColor = 'none', strokeColor = DEFAULT_REF_COLOR) {
 	const c = createSvgElement('circle', {
 		cx: String(SWIMLANE_WIDTH * (index + 1)),
-		cy: String(SWIMLANE_WIDTH),
+		cy: String(SWIMLANE_HEIGHT / 2),
 		r: String(radius)
 	});
-	c.style.strokeWidth = `${strokeWidth}px`;
-	if (fillColor) c.style.fill = fillColor;
+	c.setAttribute('stroke', strokeColor);
+	c.setAttribute('stroke-width', `${strokeWidth}px`);
+	c.setAttribute('fill', fillColor);
 	return c;
 }
 function drawVerticalLine(x, y1, y2, color, strokeWidth = 1) {
@@ -227,16 +228,15 @@ function renderRowGraph(vm) {
 
 	// Node symbol
 	if (vm.isCurrent) {
-		// HEAD – double ring
-		svg.append(drawCircle(circleIndex, CIRCLE_RADIUS + 3, CIRCLE_STROKE_WIDTH, circleColor));
-		svg.append(drawCircle(circleIndex, CIRCLE_STROKE_WIDTH, CIRCLE_RADIUS));
+		// HEAD – single ring
+		svg.append(drawCircle(circleIndex, CIRCLE_RADIUS + 1, CIRCLE_STROKE_WIDTH, '#000', circleColor));
 	} else if ((item.parents?.length || 0) > 1) {
 		// merge commit – double dot
-		svg.append(drawCircle(circleIndex, CIRCLE_RADIUS + 2, CIRCLE_STROKE_WIDTH, circleColor));
-		svg.append(drawCircle(circleIndex, CIRCLE_RADIUS - 1, CIRCLE_STROKE_WIDTH, circleColor));
+		svg.append(drawCircle(circleIndex, CIRCLE_RADIUS + 1, 1, 'none', circleColor));
+		svg.append(drawCircle(circleIndex, CIRCLE_RADIUS - 1, CIRCLE_STROKE_WIDTH, circleColor, '#000'));
 	} else {
 		// normal commit – single dot
-		svg.append(drawCircle(circleIndex, CIRCLE_RADIUS + 1, CIRCLE_STROKE_WIDTH, circleColor));
+		svg.append(drawCircle(circleIndex, CIRCLE_RADIUS + 1, CIRCLE_STROKE_WIDTH, circleColor, '#000'));
 	}
 
 	// set dimensions based on lane count

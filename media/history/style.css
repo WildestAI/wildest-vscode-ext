@@ -12,6 +12,7 @@ body {
 
 body {
 	margin: 0;
+	padding: 0;
 	font-family: var(--vscode-font-family);
 	background: var(--vscode-editor-background);
 	color: var(--vscode-foreground);
@@ -64,7 +65,7 @@ body {
 	align-items: center;
 	gap: 8px;
 	height: var(--row-h);
-	padding: 0 8px;
+	padding: 0;
 	cursor: pointer;
 	user-select: none;
 }
@@ -84,6 +85,8 @@ body {
 	justify-content: flex-start;
 	min-width: 12px;
 	/* grows with the svg width */
+	flex: 0 1 auto;
+	flex-shrink: 0;
 }
 
 .graph-col svg {
@@ -114,6 +117,15 @@ body {
 	color: var(--vscode-descriptionForeground);
 	opacity: .9;
 	font-size: 12px;
+	/* Hidden by default on narrow views */
+	display: none;
+}
+
+/* Show author when there's enough space */
+@media (min-width: 480px) {
+	.author {
+		display: block;
+	}
 }
 
 /* Empty / Error */

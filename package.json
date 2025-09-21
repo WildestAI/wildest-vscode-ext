@@ -3,7 +3,7 @@
   "displayName": "WildestAI",
   "publisher": "WildestAI",
   "description": "AI-powered diff for AI generated code",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "icon": "media/logo-transparent.png",
   "engines": {
     "vscode": "^1.99.0"
@@ -41,8 +41,8 @@
         },
         {
           "type": "webview",
-          "id": "wildestai.graphView",
-          "name": "Graph",
+          "id": "wildestai.historyView",
+          "name": "History",
           "when": "true",
           "icon": "$(git-commit)"
         }
@@ -87,6 +87,11 @@
         "command": "wildestai.refreshStagedChanges",
         "title": "Wildest AI: Refresh Staged Changes",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "wildestai.refreshHistory",
+        "title": "Wildest AI: Refresh History",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -106,6 +111,11 @@
         {
           "command": "wildestai.refreshChangesView",
           "when": "view == wildestai.changesView || view == wildestai.changesViewInSCM",
+          "group": "navigation"
+        },
+        {
+          "command": "wildestai.refreshHistory",
+          "when": "view == wildestai.historyView",
           "group": "navigation"
         }
       ]

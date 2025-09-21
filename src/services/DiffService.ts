@@ -68,6 +68,34 @@ export class DiffService {
 	}
 
 	/**
+	 * Opens a commit diff in a webview (for History view)
+	 */
+	public async openCommitDiff(context: vscode.ExtensionContext, commitHash: string, repoPath?: string): Promise<void> {
+		try {
+			const repositories = await GitService.getRepositories();
+			const repoRoot = repoPath || repositories[0]?.repoRoot;
+			if (!repoRoot) {
+				vscode.window.showErrorMessage('No repository found for the commit');
+				return;
+			}
+			const stage = `commit-${commitHash}`;
+
+			// Check cache first
+			const cachedEntry = this._cache.get(repoRoot, stage as any);
+			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath)) {
+				this._outputChannel.appendLine(`Using cached commit diff for ${commitHash}`);
+				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
+				return;
+			}
+
+			// Generate new content
+			await this.generateCommitDiff(context, repoRoot, commitHash);
+		} catch (error: any) {
+			vscode.window.showErrorMessage(`Failed to open commit diff: ${error.message}`);
+		}
+	}
+
+	/**
 	 * Opens a diff view, using cache if available
 	 */
 	private async openDiffView(context: vscode.ExtensionContext, staged: boolean, repoPath?: string): Promise<void> {
@@ -112,6 +140,53 @@ export class DiffService {
 	}
 
 	/**
+	 * Generates and shows commit diff content, caching the result
+	 */
+	private async generateCommitDiff(
+		context: vscode.ExtensionContext,
+		repoRoot: string,
+		commitHash: string
+	): Promise<void> {
+		const startTime = Date.now();
+		await this.showLoadingScreen();
+
+		await vscode.window.withProgress({
+			location: vscode.ProgressLocation.Notification,
+			title: `Generating DiffGraph for commit ${commitHash.substring(0, 7)}...`,
+			cancellable: false
+		}, async (progress) => {
+			try {
+				// Build temp file path
+				const htmlFilePath = this.buildTempFilePath(repoRoot, `commit-${commitHash}`);
+
+				// Call CLI via CliService with commit range
+				const args = ['diff', `${commitHash}~1..${commitHash}`, '--output', htmlFilePath, '--no-open'];
+				const cliCommand = CliService.setupCommand(args, context);
+				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
+
+				// Log output
+				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
+				this.logOutput(cmdString, stdout, stderr);
+
+				// Cache the result
+				this._cache.set(repoRoot, `commit-${commitHash}` as any, htmlFilePath);
+
+				// Show notification
+				this._notificationService.sendOperationComplete(
+					`Commit DiffGraph`,
+					`${commitHash.substring(0, 7)} in ${path.basename(repoRoot)}`,
+					{ startTime }
+				);
+
+				// Show content
+				await this.showWebviewWithContent(htmlFilePath, `commit-${commitHash}`);
+			} catch (error: any) {
+				throw error;
+			}
+		});
+	}
+
+	/**
 	 * Generates and shows diff content, caching the result
 	 */
 	private async generateAndShowDiff(
@@ -132,7 +207,11 @@ export class DiffService {
 				const htmlFilePath = this.buildTempFilePath(repoRoot, stage);
 
 				// Call CLI via CliService
-				const cliCommand = this.setupCliCommand(htmlFilePath, context, stage === 'staged');
+				const args: string[] = ['diff', '--output', htmlFilePath, '--no-open'];
+				if (stage === 'staged') {
+					args.push('--staged');
+				}
+				const cliCommand = CliService.setupCommand(args, context);
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
 
 				// Log output
@@ -164,97 +243,6 @@ export class DiffService {
 		const repoName = path.basename(repoRoot);
 		const timestamp = Date.now();
 		return path.join(os.tmpdir(), `wildest-${repoName}-${stage}-${timestamp}.html`);
-	}
-
-	/**
-	 * Sets up CLI command with appropriate arguments
-	 */
-	private setupCliCommand(htmlFilePath: string, context: vscode.ExtensionContext, staged: boolean): CliCommand {
-		let env = Object.assign({}, process.env);
-		const isDevMode = process.env.WILDEST_DEV_MODE === '1' || process.env.NODE_ENV === 'development';
-
-		if (isDevMode) {
-			return this.getDevCommand(htmlFilePath, env, staged);
-		} else {
-			return this.getProdCommand(htmlFilePath, env, context, staged);
-		}
-	}
-
-	private getDevCommand(htmlFilePath: string, env: NodeJS.ProcessEnv, staged: boolean): CliCommand {
-		const venvPath = process.env.WILDEST_VENV_PATH || '../DiffGraph-CLI/.venv';
-		const venvBin = path.join(venvPath, 'bin');
-		env = Object.assign({}, env, {
-			PATH: `${venvBin}${path.delimiter}${env.PATH}`,
-			VIRTUAL_ENV: venvPath
-		});
-
-		const args = ['diff', '--output', htmlFilePath, '--no-open'];
-		if (staged) {
-			args.push('--staged');
-		}
-
-		return {
-			executable: 'wild',
-			args,
-			env
-		};
-	}
-
-	private getProdCommand(
-		htmlFilePath: string,
-		env: NodeJS.ProcessEnv,
-		context: vscode.ExtensionContext,
-		staged: boolean
-	): CliCommand {
-		const wildBinary = this.getBinaryPath(context);
-
-		const args = ['diff', '--output', htmlFilePath, '--no-open'];
-		if (staged) {
-			args.push('--staged');
-		}
-
-		return {
-			executable: wildBinary,
-			args,
-			env
-		};
-	}
-
-	private getBinaryPath(context: vscode.ExtensionContext): string {
-		const platform = os.platform();
-		const arch = os.arch();
-
-		let binaryName = '';
-		if (platform === 'darwin' && arch === 'arm64') {
-			binaryName = 'wild-macos-arm64';
-		} else if (platform === 'darwin') {
-			binaryName = 'wild-macos-x64';
-		} else if (platform === 'linux' && arch === 'arm64') {
-			binaryName = 'wild-linux-arm64';
-		} else if (platform === 'linux') {
-			binaryName = 'wild-linux-x64';
-		} else if (platform === 'win32') {
-			binaryName = 'wild-win.exe';
-		} else {
-			throw new Error(`Unsupported platform: ${platform} ${arch}`);
-		}
-
-		const binaryPath = path.join(context.extensionPath, 'bin', binaryName);
-
-		if (!fs.existsSync(binaryPath)) {
-			throw new Error(`Binary not found: ${binaryPath}`);
-		}
-
-		// On POSIX systems, ensure the binary has execute permission
-		if (platform !== 'win32') {
-			try {
-				fs.accessSync(binaryPath, fs.constants.X_OK);
-			} catch {
-				throw new Error(`Binary is not executable: ${binaryPath}`);
-			}
-		}
-
-		return binaryPath;
 	}
 
 	/**

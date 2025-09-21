@@ -16,7 +16,7 @@
 import * as vscode from 'vscode';
 import { DiffGraphExplorerProvider } from './providers/DiffGraphExplorerProvider';
 import { DiffGraphViewProvider } from './providers/DiffGraphViewProvider';
-import { GraphViewProvider } from './providers/GraphViewProvider';
+import { HistoryViewProvider } from './providers/HistoryViewProvider';
 import { DiffService } from './services/DiffService';
 import { GitService } from './services/GitService';
 
@@ -45,11 +45,22 @@ export function activate(context: vscode.ExtensionContext) {
 		changesProvider.updateRepositories();
 	}));
 
-	// Register the Graph webview provider
-	const graphProvider = new GraphViewProvider(context.extensionUri);
-	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider('wildestai.graphView', graphProvider)
+	// Register the History webview provider with commit click callback
+	const historyProvider = new HistoryViewProvider(
+		context.extensionUri,
+		context,
+		async (commitHash: string, repoPath: string) => {
+			await diffService.openCommitDiff(context, commitHash, repoPath);
+		}
 	);
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider('wildestai.historyView', historyProvider)
+	);
+
+	// Register history refresh command
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.refreshHistory', async () => {
+		await historyProvider.refresh();
+	}));
 
 	// Register the hello world command
 	const helloDisposable = vscode.commands.registerCommand('wildestai.helloWorld', () => {

@@ -1,0 +1,104 @@
+/* media/history/style.css */
+
+:root {
+	--row-h: 22px;
+}
+
+/* Base */
+html,
+body {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	padding: 0;
+	font-family: var(--vscode-font-family);
+	background: var(--vscode-editor-background);
+	color: var(--vscode-foreground);
+}
+
+
+/* List */
+.commit-list {
+	display: block;
+}
+
+.commit-row {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: var(--row-h);
+	padding: 0;
+	cursor: pointer;
+	user-select: none;
+}
+
+.commit-row:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.commit-row:active {
+	background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+}
+
+/* Graph column */
+.graph-col {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	min-width: 12px;
+	/* grows with the svg width */
+	flex: 0 1 auto;
+	flex-shrink: 0;
+}
+
+.graph-col svg {
+	display: block;
+}
+
+/* Content column (message and trailing author) */
+.content {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	/* enable ellipsis */
+	flex: 1 1 auto;
+}
+
+.subject {
+	flex: 1 1 auto;
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.author {
+	flex: 0 0 auto;
+	white-space: nowrap;
+	color: var(--vscode-descriptionForeground);
+	opacity: .9;
+	font-size: 12px;
+	/* Hidden by default on narrow views */
+	display: none;
+}
+
+/* Show author when there's enough space */
+@media (min-width: 480px) {
+	.author {
+		display: block;
+	}
+}
+
+/* Empty / Error */
+.empty,
+.error {
+	padding: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.error {
+	color: var(--vscode-errorForeground);
+}

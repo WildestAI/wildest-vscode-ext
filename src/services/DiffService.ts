@@ -74,6 +74,10 @@ export class DiffService {
 		try {
 			const repositories = await GitService.getRepositories();
 			const repoRoot = repoPath || repositories[0]?.repoRoot;
+			if (!repoRoot) {
+				vscode.window.showErrorMessage('No repository found for the commit');
+				return;
+			}
 			const stage = `commit-${commitHash}`;
 
 			// Check cache first

@@ -76,8 +76,13 @@ export class CliService {
 	}
 
 	private static getDevCommand(args: string[] = [], env: NodeJS.ProcessEnv): CliCommand {
-		const venvPath = process.env.WILDEST_VENV_PATH || `..${path.delimiter}DiffGraph-CLI${path.delimiter}.venv`;
-		const venvBin = path.join(venvPath, 'bin');
+		const defaultVenvPath = path.join(__dirname, '..', 'DiffGraph-CLI', '.venv');
+		const venvPath = process.env.WILDEST_VENV_PATH || defaultVenvPath;
+		const binDir = os.platform() === 'win32' ? 'Scripts' : 'bin';
+		if (!fs.existsSync(venvPath) || !fs.existsSync(path.join(venvPath, binDir, 'wild'))) {
+			throw new Error(`Virtual environment not found or invalid at path: ${venvPath}. Please set WILDEST_VENV_PATH environment variable to point to a valid virtual environment.`);
+		}
+		const venvBin = path.join(venvPath, binDir);
 		env = Object.assign({}, env, {
 			PATH: `${venvBin}${path.delimiter}${env.PATH}`,
 			VIRTUAL_ENV: venvPath

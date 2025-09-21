@@ -110,7 +110,13 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				// Parse commit data
 				const parts = commitPart.split('|');
 				if (parts.length >= 7) {
-					const [hash, shortHash, author, email, date, subject, parents, refs] = parts;
+					// Take first 5 tokens as fixed fields (to avoid issues if subject contains '|')
+					const [hash, shortHash, author, email, date, ...rest] = parts;
+					// Take last two elements as parents and refs
+					const refs = rest.pop() || '';
+					const parents = rest.pop() || '';
+					// Join remaining elements back into subject (in case subject contained '|')
+					const subject = rest.join('|');
 
 					commits.push({
 						hash: hash.trim(),

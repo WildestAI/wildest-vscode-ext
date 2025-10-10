@@ -21,15 +21,15 @@ export class GitHistoryCache {
 		}
 
 		return {
-			commits: entry.commits,
-			graphLines: entry.graphLines
+			commits: [...entry.commits],
+			graphLines: [...entry.graphLines]
 		};
 	}
 
 	public static update(repoPath: string, commits: GitCommit[], graphLines: string[]): void {
 		this.cache.set(repoPath, {
-			commits,
-			graphLines,
+			commits: [...commits],
+			graphLines: [...graphLines],
 			timestamp: Date.now()
 		});
 	}

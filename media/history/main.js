@@ -31,13 +31,20 @@ window.addEventListener('message', e => {
 			break;
 		case 'commits':
 			updateState(e.data);
+			vscode.setState(state);
 			renderList(state.commits, state.repoPath);
 			break;
 		case 'refreshing':
 			state.isRefreshing = e.data.state;
+			vscode.setState(state);
 			break;
 		case 'error':
 			state.isRefreshing = false;
+			renderError(e.data.message || 'Unknown error');
+			vscode.setState(state);
+			break;
+		case 'empty':
+			renderEmpty();
 			break;
 	}
 });
@@ -283,24 +290,7 @@ function renderRowGraph(vm) {
 
 // ---------- UI ----------
 
-window.addEventListener('message', event => {
-	const msg = event.data || {};
-	switch (msg.type) {
-		case 'empty':
-			renderEmpty();
-			break;
-		case 'error':
-			renderError(msg.message || 'Unknown error');
-			break;
-		case 'commits':
-			state.repoPath = msg.repoPath || '';
-			state.repoName = msg.repoName || '';
-			state.commits = Array.isArray(msg.commits) ? msg.commits : [];
-			vscode.setState(state);
-			renderList(state.commits, state.repoPath);
-			break;
-	}
-});
+
 
 function renderEmpty() {
 	const app = document.getElementById('app');

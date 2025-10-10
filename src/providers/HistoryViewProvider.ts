@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
-import * as childProcess from 'child_process';
-import * as util from 'util';
 import * as path from 'path';
 import { GitService } from '../services/GitService';
 import { CliService } from '../services/CliService';
 import { GitCommit, GitGraphNode, CliCommand } from '../utils/types';
+import { GitHistoryCache } from '../services/GitHistoryCache';
 
 export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'wildestai.historyView';
 	private _view?: vscode.WebviewView;
+	private _currentRepoRoot?: string;
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
@@ -64,9 +64,12 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			// Ensure HTML shell is set (idempotent)
 			this._view.webview.html = this.getHtmlForWebview(this._view.webview, repoName);
 
-			const { commits, graphLines } = await this.getGitCommits(repoRoot);
-			const graphData = this.buildGraphData(commits, graphLines);
+			// Show loading state before fetching data
+			this._view.webview.postMessage({ type: 'loading', state: true });
 
+			const { commits, graphLines } = await this.getGitCommits(repoRoot);
+
+			const graphData = this.buildGraphData(commits, graphLines);
 			this._view.webview.postMessage({
 				type: 'commits',
 				commits: graphData.map(node => ({
@@ -88,8 +91,14 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			const args = ['log', '--graph', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'];
 			const command = CliService.setupCommand(args, this._context);
 			const { stdout } = await CliService.execute(command, repoPath);
+			const result = this.parseGitGraphLog(stdout);
 
-			return this.parseGitGraphLog(stdout);
+			// Show done loading
+			if (this._view) {
+				this._view.webview.postMessage({ type: 'loading', state: false });
+			}
+
+			return result;
 		} catch (error: any) {
 			throw new Error(`Failed to get git history: ${error.message}`);
 		}

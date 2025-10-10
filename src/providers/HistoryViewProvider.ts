@@ -82,6 +82,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			});
 		} catch (error: any) {
 			this._view.webview.postMessage({ type: 'error', message: error.message ?? String(error) });
+		} finally {
+			// Ensure loading state is turned off in case of unexpected errors
+			this._view.webview.postMessage({ type: 'loading', state: false });
 		}
 	}
 
@@ -92,12 +95,6 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			const command = CliService.setupCommand(args, this._context);
 			const { stdout } = await CliService.execute(command, repoPath);
 			const result = this.parseGitGraphLog(stdout);
-
-			// Show done loading
-			if (this._view) {
-				this._view.webview.postMessage({ type: 'loading', state: false });
-			}
-
 			return result;
 		} catch (error: any) {
 			throw new Error(`Failed to get git history: ${error.message}`);

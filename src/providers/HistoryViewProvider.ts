@@ -43,7 +43,16 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	public async refresh(): Promise<void> {
-		await this.loadGitHistory();
+		try {
+			await this.loadGitHistory();
+		} catch (error) {
+			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
+				// If we hit a timeout, schedule another refresh attempt
+				setTimeout(() => this.refresh(), 2000);
+			} else {
+				throw error;
+			}
+		}
 	}
 
 	private async loadGitHistory(): Promise<void> {

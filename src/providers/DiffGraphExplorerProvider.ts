@@ -1,44 +1,18 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ChangesViewNode } from '../utils/types';
+import { GitService } from '../services/GitService';
 
 export class DiffGraphExplorerProvider implements vscode.TreeDataProvider<ChangesViewNode> {
 	private _onDidChangeTreeData: vscode.EventEmitter<ChangesViewNode | undefined | null | void> = new vscode.EventEmitter<ChangesViewNode | undefined | null | void>();
 	readonly onDidChangeTreeData: vscode.Event<ChangesViewNode | undefined | null | void> = this._onDidChangeTreeData.event;
 
 	private repositories: string[] = [];
-	private initPromise: Promise<void>;
 
 	constructor() {
-		this.initPromise = this.initialize();
-	}
-
-	private async initialize() {
-		try {
-			// Get all repositories in the workspace
-			const gitExtension = vscode.extensions.getExtension('vscode.git');
-			if (gitExtension) {
-				const git = gitExtension.isActive ?
-					gitExtension.exports.getAPI(1) :
-					(await gitExtension.activate()).getAPI(1);
-
-				if (git?.repositories?.length) {
-					this.repositories = git.repositories.map((repo: any) => repo.rootUri.fsPath);
-					console.log('WildestAI: Found repositories:', this.repositories);
-				} else {
-					console.log('WildestAI: No repositories found');
-				}
-			} else {
-				console.log('WildestAI: Git extension not found');
-			}
-		} catch (error) {
-			// If we can't get repositories, we'll show empty tree
-			console.error('WildestAI: Error initializing repositories:', error);
-			this.repositories = [];
-		}
-
-		// Trigger a refresh after initialization completes
-		setTimeout(() => this.refresh(), 100);
+		// Initial load of repositories
+		this.updateRepositories();
+		setTimeout(() => this.updateRepositories(), 1000);
 	}
 
 	/**
@@ -80,9 +54,6 @@ export class DiffGraphExplorerProvider implements vscode.TreeDataProvider<Change
 	}
 
 	async getChildren(element?: ChangesViewNode): Promise<ChangesViewNode[]> {
-		// Wait for initialization to complete
-		await this.initPromise;
-
 		if (!element) {
 			// Root level - return main groups
 			return this.getRepositoryNodes();
@@ -161,7 +132,19 @@ export class DiffGraphExplorerProvider implements vscode.TreeDataProvider<Change
 	 * Update repositories and refresh the tree
 	 */
 	async updateRepositories(): Promise<void> {
-		await this.initialize();
+		try {
+			const repos = await GitService.getRepositories();
+			this.repositories = repos.map(({ repoRoot }) => repoRoot);
+		} catch (error) {
+			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
+				// If we hit a timeout, schedule another refresh attempt
+				console.log('WildestAI: No repositories found:', error);
+				this.repositories = [];
+				setTimeout(() => this.updateRepositories(), 2000);
+			} else {
+				throw error;
+			}
+		}
 		this.refresh();
 	}
 }

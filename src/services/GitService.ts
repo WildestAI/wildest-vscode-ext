@@ -3,24 +3,72 @@ import * as path from 'path';
 import { GitInfo } from '../utils/types';
 
 export class GitService {
+	private static gitAPI: any;
+	private static initializationPromise: Promise<void> | undefined;
+
+	private static async waitForGitInitialization(maxAttempts: number = 10, delayMs: number = 1000): Promise<void> {
+		if (!this.initializationPromise) {
+			this.initializationPromise = new Promise(async (resolve, reject) => {
+				const gitExtension = vscode.extensions.getExtension('vscode.git');
+				if (!gitExtension) {
+					reject(new Error('Git extension not found. Please ensure Git is enabled in VS Code.'));
+					return;
+				}
+
+				// Activate the extension if it's not already active
+				if (!gitExtension.isActive) {
+					await gitExtension.activate();
+				}
+
+				this.gitAPI = gitExtension.exports.getAPI(1);
+
+				// Subscribe to repository change events
+				this.gitAPI.onDidChangeState(() => {
+					// State has changed, repositories might be available now
+				});
+
+				let attempts = 0;
+				const checkRepositories = async () => {
+					if (this.gitAPI.repositories.length > 0) {
+						resolve();
+						return;
+					}
+
+					if (attempts >= maxAttempts) {
+						reject(new Error('Timeout waiting for Git repositories to be initialized.'));
+						return;
+					}
+
+					attempts++;
+					await new Promise(r => setTimeout(r, delayMs));
+					await checkRepositories();
+				};
+
+				await checkRepositories();
+			});
+		}
+
+		return this.initializationPromise;
+	}
+
 	public static async getRepositories(): Promise<GitInfo[]> {
-		const gitExtension = vscode.extensions.getExtension('vscode.git');
-		if (!gitExtension) {
-			throw new Error('Git extension not found. Please ensure Git is enabled in VS Code.');
+		try {
+			await this.waitForGitInitialization();
+
+			if (!this.gitAPI?.repositories?.length) {
+				throw new Error('No Git repositories found in the workspace.');
+			}
+
+			return this.gitAPI.repositories.map((repository: any) => {
+				const repoRoot = repository.rootUri.fsPath;
+				return { repository, repoRoot };
+			});
+		} catch (error) {
+			if (error instanceof Error) {
+				throw error;
+			}
+			throw new Error('Failed to get Git repositories');
 		}
-
-		const git = gitExtension.isActive
-			? gitExtension.exports.getAPI(1)
-			: (await gitExtension.activate()).getAPI(1);
-
-		if (!git?.repositories?.length) {
-			throw new Error('No Git repositories found in the workspace.');
-		}
-
-		return git.repositories.map((repository: any) => {
-			const repoRoot = repository.rootUri.fsPath;
-			return { repository, repoRoot };
-		});
 	}
 
 	/**

@@ -60,6 +60,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 
+		// Show loading state immediately at the start
+		this._view.webview.postMessage({ type: 'loading', state: true });
+
 		try {
 			const repositories = await GitService.getRepositories();
 			if (repositories.length === 0) {
@@ -73,9 +76,23 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			// Ensure HTML shell is set (idempotent)
 			this._view.webview.html = this.getHtmlForWebview(this._view.webview, repoName);
 
-			// Show loading state before fetching data
-			this._view.webview.postMessage({ type: 'loading', state: true });
+			// Check cache and show cached data immediately if available
+			const cached = GitHistoryCache.getCached(repoRoot);
+			if (cached) {
+				const graphData = this.buildGraphData(cached.commits, cached.graphLines);
+				this._view.webview.postMessage({
+					type: 'commits',
+					commits: graphData.map(node => ({
+						...node.commit,
+						color: node.color
+					})),
+					graphLines: cached.graphLines,
+					repoPath: repoRoot,
+					repoName
+				});
+			}
 
+			// Always fetch fresh data
 			const { commits, graphLines } = await this.getGitCommits(repoRoot);
 
 			const graphData = this.buildGraphData(commits, graphLines);
@@ -99,11 +116,15 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 	private async getGitCommits(repoPath: string): Promise<{ commits: GitCommit[], graphLines: string[] }> {
 		try {
-			// Get git log with graph and detailed format combined
+			// Always fetch fresh data
 			const args = ['log', '--graph', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'];
 			const command = CliService.setupCommand(args, this._context);
 			const { stdout } = await CliService.execute(command, repoPath);
 			const result = this.parseGitGraphLog(stdout);
+
+			// Update cache with fresh data
+			GitHistoryCache.update(repoPath, result.commits, result.graphLines);
+
 			return result;
 		} catch (error: any) {
 			throw new Error(`Failed to get git history: ${error.message}`);

@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
-import * as childProcess from 'child_process';
-import * as util from 'util';
 import * as path from 'path';
 import { GitService } from '../services/GitService';
 import { CliService } from '../services/CliService';
 import { GitCommit, GitGraphNode, CliCommand } from '../utils/types';
+import { GitHistoryCache } from '../services/GitHistoryCache';
 
 export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'wildestai.historyView';
 	private _view?: vscode.WebviewView;
+	private _currentRepoRoot?: string;
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
@@ -43,13 +43,25 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	public async refresh(): Promise<void> {
-		await this.loadGitHistory();
+		try {
+			await this.loadGitHistory();
+		} catch (error) {
+			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
+				// If we hit a timeout, schedule another refresh attempt
+				setTimeout(() => this.refresh(), 2000);
+			} else {
+				throw error;
+			}
+		}
 	}
 
 	private async loadGitHistory(): Promise<void> {
 		if (!this._view) {
 			return;
 		}
+
+		// Show loading state immediately at the start
+		this._view.webview.postMessage({ type: 'loading', state: true });
 
 		try {
 			const repositories = await GitService.getRepositories();
@@ -64,9 +76,26 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			// Ensure HTML shell is set (idempotent)
 			this._view.webview.html = this.getHtmlForWebview(this._view.webview, repoName);
 
-			const { commits, graphLines } = await this.getGitCommits(repoRoot);
-			const graphData = this.buildGraphData(commits, graphLines);
+			// Check cache and show cached data immediately if available
+			const cached = GitHistoryCache.getCached(repoRoot);
+			if (cached) {
+				const graphData = this.buildGraphData(cached.commits, cached.graphLines);
+				this._view.webview.postMessage({
+					type: 'commits',
+					commits: graphData.map(node => ({
+						...node.commit,
+						color: node.color
+					})),
+					graphLines: cached.graphLines,
+					repoPath: repoRoot,
+					repoName
+				});
+			}
 
+			// Always fetch fresh data
+			const { commits, graphLines } = await this.getGitCommits(repoRoot);
+
+			const graphData = this.buildGraphData(commits, graphLines);
 			this._view.webview.postMessage({
 				type: 'commits',
 				commits: graphData.map(node => ({
@@ -79,17 +108,24 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			});
 		} catch (error: any) {
 			this._view.webview.postMessage({ type: 'error', message: error.message ?? String(error) });
+		} finally {
+			// Ensure loading state is turned off in case of unexpected errors
+			this._view.webview.postMessage({ type: 'loading', state: false });
 		}
 	}
 
 	private async getGitCommits(repoPath: string): Promise<{ commits: GitCommit[], graphLines: string[] }> {
 		try {
-			// Get git log with graph and detailed format combined
+			// Always fetch fresh data
 			const args = ['log', '--graph', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'];
 			const command = CliService.setupCommand(args, this._context);
 			const { stdout } = await CliService.execute(command, repoPath);
+			const result = this.parseGitGraphLog(stdout);
 
-			return this.parseGitGraphLog(stdout);
+			// Update cache with fresh data
+			GitHistoryCache.update(repoPath, result.commits, result.graphLines);
+
+			return result;
 		} catch (error: any) {
 			throw new Error(`Failed to get git history: ${error.message}`);
 		}

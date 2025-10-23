@@ -8,11 +8,52 @@ const vscode = acquireVsCodeApi();
  * connect seamlessly across rows, and merges/forks are drawn with arcs.
  */
 
-const state = {
+// Initialize state from previous session or default values
+const state = vscode.getState() || {
 	repoPath: '',
 	repoName: '',
-	commits: []
+	commits: [],
+	isRefreshing: false
 };
+
+// Create loading overlay
+const loadingOverlay = document.createElement('div');
+loadingOverlay.className = 'loading-overlay';
+loadingOverlay.innerHTML = '<div class="loading-spinner"></div>';
+document.body.appendChild(loadingOverlay);
+
+window.addEventListener('message', e => {
+	const { type } = e.data;
+
+	switch (type) {
+		case 'loading':
+			loadingOverlay.classList.toggle('visible', e.data.state);
+			break;
+		case 'commits':
+			updateState(e.data);
+			vscode.setState(state);
+			renderList(state.commits, state.repoPath);
+			break;
+		case 'refreshing':
+			state.isRefreshing = e.data.state;
+			vscode.setState(state);
+			break;
+		case 'error':
+			state.isRefreshing = false;
+			renderError(e.data.message || 'Unknown error');
+			vscode.setState(state);
+			break;
+		case 'empty':
+			renderEmpty();
+			break;
+	}
+});
+
+function updateState(data) {
+	state.repoPath = data.repoPath;
+	state.repoName = data.repoName;
+	state.commits = data.commits;
+}
 
 // --- constants (based on VS Code's scmHistory.ts) ---
 const SWIMLANE_HEIGHT = 22;
@@ -249,23 +290,7 @@ function renderRowGraph(vm) {
 
 // ---------- UI ----------
 
-window.addEventListener('message', event => {
-	const msg = event.data || {};
-	switch (msg.type) {
-		case 'empty':
-			renderEmpty();
-			break;
-		case 'error':
-			renderError(msg.message || 'Unknown error');
-			break;
-		case 'commits':
-			state.repoPath = msg.repoPath || '';
-			state.repoName = msg.repoName || '';
-			state.commits = Array.isArray(msg.commits) ? msg.commits : [];
-			renderList(state.commits, state.repoPath);
-			break;
-	}
-});
+
 
 function renderEmpty() {
 	const app = document.getElementById('app');
@@ -348,5 +373,9 @@ function renderList(commits, repoPath) {
 	app.appendChild(list);
 }
 
-// initial empty shell while waiting for first postMessage
-document.getElementById('app').textContent = 'Loading history…';
+// Render initial state from cache or show loading
+if (state.commits && state.commits.length > 0) {
+	renderList(state.commits, state.repoPath);
+} else {
+	document.getElementById('app').textContent = 'Loading history…';
+}

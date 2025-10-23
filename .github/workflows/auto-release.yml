@@ -53,7 +53,6 @@ jobs:
           WILDESTAI_AZURE_PUBLISH_PAT: ${{ secrets.WILDESTAI_AZURE_PUBLISH_PAT }}
           OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_OUTPUT: ${{ github.output }}
           # PR details
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}

@@ -1,0 +1,81 @@
+name: Auto Release on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  auto-release:
+    # Only run if PR was actually merged (not just closed)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for proper version analysis
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.1'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+          cache: 'pip'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r .github/scripts/requirements.txt
+
+      - name: Make release script executable
+        run: chmod +x .github/scripts/auto_release.py
+
+      - name: Run automated release
+        id: release
+        env:
+          # GitHub secrets are passed as environment variables
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VSCE_TOKEN: ${{ secrets.VSCE_TOKEN }}
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OUTPUT: ${{ github.output }}
+          # PR details
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python .github/scripts/auto_release.py
+
+      - name: Create GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.release.outputs.new_version }}
+          name: Release v${{ steps.release.outputs.new_version }}
+          body: |
+            Automated release generated from PR #${{ github.event.pull_request.number }}
+
+            ${{ steps.release.outputs.changelog }}
+
+            Published to:
+            - [VSCode Marketplace](https://marketplace.visualstudio.com/items?itemName=WildestAI.wildest-vscode-ext)
+            - [Open VSX Registry](https://open-vsx.org/extension/WildestAI/wildest-vscode-ext)
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

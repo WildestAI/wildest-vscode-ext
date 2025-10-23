@@ -194,19 +194,21 @@ def update_changelog(changelog_entry: str):
     with open("CHANGELOG.md", "r") as f:
         content = f.read()
 
-    # Find the [Unreleased] section
-    unreleased_match = re.search(r'## \[Unreleased\].*?\n(.*?\n)', content, re.DOTALL)
+    # Find the [Unreleased] section and the next ## heading (or end of file)
+    # This handles edge cases: empty section, varying whitespace, etc.
+    unreleased_pattern = r'(## \[Unreleased\].*?\n+)(## \[|\Z)'
+    unreleased_match = re.search(unreleased_pattern, content, re.DOTALL)
     if not unreleased_match:
         print("Error: Could not find [Unreleased] section in CHANGELOG.md")
         sys.exit(1)
 
-    # Get the position after the unreleased section content
-    insert_pos = unreleased_match.end()
+    # Insert after the [Unreleased] section, before the next version section
+    insert_pos = unreleased_match.start(2)
 
     # Insert the new changelog entry
     new_content = (
         content[:insert_pos] +
-        "\n" + changelog_entry + "\n\n" +
+        changelog_entry + "\n\n" +
         content[insert_pos:]
     )
 

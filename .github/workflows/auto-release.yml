@@ -50,8 +50,8 @@ jobs:
         env:
           # GitHub secrets are passed as environment variables
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          VSCE_TOKEN: ${{ secrets.VSCE_TOKEN }}
-          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+          WILDESTAI_AZURE_PUBLISH_PAT: ${{ secrets.WILDESTAI_AZURE_PUBLISH_PAT }}
+          OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_OUTPUT: ${{ github.output }}
           # PR details

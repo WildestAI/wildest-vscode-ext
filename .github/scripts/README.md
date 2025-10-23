@@ -27,13 +27,13 @@ Your Anthropic API key for Claude AI
 - Get it from: https://console.anthropic.com/
 - Used for: Analyzing changes and determining version bumps
 
-### `VSCE_TOKEN`
-Visual Studio Code Marketplace Personal Access Token
+### `WILDESTAI_AZURE_PUBLISH_PAT`
+Visual Studio Code Marketplace Personal Access Token (Azure DevOps PAT)
 - Get it from: https://marketplace.visualstudio.com/manage
 - Requires: Publisher access for WildestAI
 - Used for: Publishing to VSCode Marketplace
 
-### `OVSX_TOKEN`
+### `OPENVSX_TOKEN`
 Open VSX Registry Access Token
 - Get it from: https://open-vsx.org/user-settings/tokens
 - Requires: Publisher access for WildestAI
@@ -46,8 +46,8 @@ To test the release script locally:
 ```bash
 # Set environment variables
 export ANTHROPIC_API_KEY="your-key"
-export VSCE_TOKEN="your-token"
-export OVSX_TOKEN="your-token"
+export WILDESTAI_AZURE_PUBLISH_PAT="your-vsce-token"
+export OPENVSX_TOKEN="your-ovsx-token"
 export PR_TITLE="Fix: some bug"
 export PR_BODY="This fixes the bug"
 export BASE_SHA="abc123"  # Previous commit SHA

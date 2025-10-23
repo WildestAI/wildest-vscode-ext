@@ -67,9 +67,15 @@ git push --tags
 
 ## Publishing Commands Reference
 
-- **VSCode Marketplace**: `vsce publish` (requires VSCE_TOKEN)
-- **Open VSX**: `ovsx publish` (requires OVSX_TOKEN)
+- **VSCode Marketplace**: `vsce publish` (requires WILDESTAI_AZURE_PUBLISH_PAT environment variable or `-p` flag)
+- **Open VSX**: `ovsx publish` (requires OPENVSX_TOKEN environment variable or `-p` flag)
 - Both commands will automatically run `npm run vscode:prepublish` to build the extension
+
+Example with tokens:
+```bash
+vsce publish -p $WILDESTAI_AZURE_PUBLISH_PAT
+ovsx publish -p $OPENVSX_TOKEN
+```
 
 ## Important Notes
 

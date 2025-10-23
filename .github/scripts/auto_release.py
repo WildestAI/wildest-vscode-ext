@@ -185,11 +185,11 @@ def commit_and_push(new_version: str):
 
 def publish_extension():
     """Publish extension to VSCode Marketplace and Open VSX."""
-    vsce_token = os.getenv("VSCE_TOKEN")
-    ovsx_token = os.getenv("OVSX_TOKEN")
+    vsce_token = os.getenv("WILDESTAI_AZURE_PUBLISH_PAT")
+    ovsx_token = os.getenv("OPENVSX_TOKEN")
 
     if not vsce_token or not ovsx_token:
-        print("Error: VSCE_TOKEN or OVSX_TOKEN not set")
+        print("Error: WILDESTAI_AZURE_PUBLISH_PAT or OPENVSX_TOKEN not set")
         sys.exit(1)
 
     # Install publishing tools

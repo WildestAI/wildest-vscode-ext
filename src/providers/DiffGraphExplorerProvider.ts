@@ -8,6 +8,8 @@ export class DiffGraphExplorerProvider implements vscode.TreeDataProvider<Change
 	readonly onDidChangeTreeData: vscode.Event<ChangesViewNode | undefined | null | void> = this._onDidChangeTreeData.event;
 
 	private repositories: string[] = [];
+	private retryCount = 0;
+	private readonly MAX_RETRIES = 30;
 
 	constructor() {
 		// Initial load of repositories
@@ -20,6 +22,13 @@ export class DiffGraphExplorerProvider implements vscode.TreeDataProvider<Change
 	 */
 	refresh(): void {
 		this._onDidChangeTreeData.fire();
+	}
+
+	/**
+	 * Reset retry count (useful when user manually refreshes or workspace changes)
+	 */
+	resetRetryCount(): void {
+		this.retryCount = 0;
 	}
 
 	getTreeItem(element: ChangesViewNode): vscode.TreeItem {
@@ -135,14 +144,23 @@ export class DiffGraphExplorerProvider implements vscode.TreeDataProvider<Change
 		try {
 			const repos = await GitService.getRepositories();
 			this.repositories = repos.map(({ repoRoot }) => repoRoot);
+			this.retryCount = 0; // Reset on success
 		} catch (error) {
 			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
 				// If we hit a timeout, schedule another refresh attempt
 				console.log('WildestAI: No repositories found:', error);
 				this.repositories = [];
-				setTimeout(() => this.updateRepositories(), 2000);
+
+				if (this.retryCount < this.MAX_RETRIES) {
+					this.retryCount++;
+					console.log(`WildestAI: Scheduling retry ${this.retryCount}/${this.MAX_RETRIES}`);
+					setTimeout(() => this.updateRepositories(), 2000);
+				} else {
+					console.log('WildestAI: Max retries reached, stopping retry attempts. Manual refresh may be needed.');
+				}
 			} else {
-				throw error;
+				console.error('WildestAI: Error loading repositories:', error);
+				this.repositories = [];
 			}
 		}
 		this.refresh();

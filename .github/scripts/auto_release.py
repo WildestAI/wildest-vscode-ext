@@ -10,7 +10,7 @@ import json
 import subprocess
 import re
 from datetime import date
-from typing import Dict, Tuple, Union, List
+from typing import Dict, Tuple, Union, List, Optional
 from pydantic import BaseModel, Field
 import anthropic
 
@@ -28,28 +28,40 @@ class VersionAnalysis(BaseModel):
     )
 
 
-def run_command(cmd: Union[str, List[str]], check: bool = True) -> str:
+def run_command(
+    cmd: Union[str, List[str]],
+    check: bool = True,
+    env: Optional[Dict[str, str]] = None
+) -> str:
     """
     Run a command safely without shell injection vulnerabilities.
 
     Args:
         cmd: Either a list of command arguments (safe) or a string (for simple commands)
         check: Whether to raise an error on non-zero exit code
+        env: Optional environment variables to pass to the command (merged with os.environ)
 
     Returns:
         Command output as string
     """
+    # Print command without exposing sensitive env vars
     if isinstance(cmd, str):
         print(f"Running: {cmd}")
     else:
         print(f"Running: {' '.join(cmd)}")
+
+    # Merge custom env with current environment
+    command_env = os.environ.copy()
+    if env:
+        command_env.update(env)
 
     result = subprocess.run(
         cmd,
         shell=False,  # SECURITY: Never use shell=True with user input
         capture_output=True,
         text=True,
-        check=check
+        check=check,
+        env=command_env
     )
 
     if result.returncode != 0 and check:
@@ -202,9 +214,53 @@ def update_changelog(changelog_entry: str):
         f.write(new_content)
 
 
+def build_extension():
+    """Build the extension package with the new version."""
+    print("Building extension with new version")
+    run_command(["npm", "run", "package"])
+
+
+def publish_extension():
+    """
+    Publish extension to VSCode Marketplace and Open VSX.
+
+    SECURITY: Tokens are passed via environment variables, not command-line args,
+    to prevent exposure in process listings.
+    """
+    vsce_token = os.getenv("WILDESTAI_AZURE_PUBLISH_PAT")
+    ovsx_token = os.getenv("OPENVSX_TOKEN")
+
+    if not vsce_token or not ovsx_token:
+        print("Error: WILDESTAI_AZURE_PUBLISH_PAT or OPENVSX_TOKEN not set")
+        sys.exit(1)
+
+    # Install publishing tools
+    print("Installing vsce and ovsx")
+    run_command(["npm", "install", "-g", "@vscode/vsce", "ovsx"])
+
+    # SECURITY: Pass tokens via environment variables, NOT as command-line arguments
+    # This prevents tokens from appearing in process listings (ps, top, etc.)
+
+    # Publish to VSCode Marketplace
+    # vsce looks for VSCE_PAT environment variable
+    print("Publishing to VSCode Marketplace")
+    run_command(
+        ["vsce", "publish", "--no-git-tag-version"],
+        env={"VSCE_PAT": vsce_token}
+    )
+
+    # Publish to Open VSX
+    # ovsx looks for OVSX_PAT environment variable
+    print("Publishing to Open VSX")
+    run_command(
+        ["ovsx", "publish"],
+        env={"OVSX_PAT": ovsx_token}
+    )
+
+
 def commit_and_push(new_version: str):
-    """Commit version changes and push."""
-    print("Committing version changes")
+    """Commit version changes and push - ONLY called after successful publish."""
+    print("Committing version changes (after successful publish)")
 
     # SECURITY: Validate version format
     if not re.match(r'^\d+\.\d+\.\d+$', new_version):
@@ -218,36 +274,9 @@ def commit_and_push(new_version: str):
     run_command(["git", "push"])
 
 
-def publish_extension():
-    """Publish extension to VSCode Marketplace and Open VSX."""
-    vsce_token = os.getenv("WILDESTAI_AZURE_PUBLISH_PAT")
-    ovsx_token = os.getenv("OPENVSX_TOKEN")
-
-    if not vsce_token or not ovsx_token:
-        print("Error: WILDESTAI_AZURE_PUBLISH_PAT or OPENVSX_TOKEN not set")
-        sys.exit(1)
-
-    # Install publishing tools
-    print("Installing vsce and ovsx")
-    run_command(["npm", "install", "-g", "@vscode/vsce", "ovsx"])
-
-    # Build extension
-    print("Building extension")
-    run_command(["npm", "run", "package"])
-
-    # SECURITY: Pass tokens as arguments, not in shell commands
-    # Publish to VSCode Marketplace
-    print("Publishing to VSCode Marketplace")
-    run_command(["vsce", "publish", "-p", vsce_token])
-
-    # Publish to Open VSX
-    print("Publishing to Open VSX")
-    run_command(["ovsx", "publish", "-p", ovsx_token])
-
-
 def create_git_tag(new_version: str):
-    """Create and push git tag."""
-    print(f"Creating git tag v{new_version}")
+    """Create and push git tag - ONLY called after successful publish and commit."""
+    print(f"Creating git tag v{new_version} (after successful publish)")
 
     # SECURITY: Validate version format
     if not re.match(r'^\d+\.\d+\.\d+$', new_version):
@@ -297,13 +326,25 @@ def main():
     # Step 5: Update CHANGELOG.md
     update_changelog(changelog_entry)
 
-    # Step 6: Commit and push changes
-    commit_and_push(new_version)
+    # Step 6: Build extension with new version
+    # This ensures the built artifacts contain the correct version
+    build_extension()
 
     # Step 7: Publish to marketplaces
-    publish_extension()
+    # CRITICAL: Publish BEFORE committing
+    # If publish fails, we haven't committed a broken version
+    try:
+        publish_extension()
+    except Exception as e:
+        print(f"ERROR: Publishing failed: {e}")
+        print("Version was NOT committed or tagged since publishing failed")
+        print("You can fix the issue and retry manually")
+        sys.exit(1)
 
-    # Step 8: Create and push git tag
+    # Step 8: Commit and push changes (ONLY after successful publish)
+    commit_and_push(new_version)
+
+    # Step 9: Create and push git tag (ONLY after successful commit)
     create_git_tag(new_version)
 
     print("=== Release process completed successfully ===")

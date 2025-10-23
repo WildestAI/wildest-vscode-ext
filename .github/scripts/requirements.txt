@@ -1,3 +1,5 @@
 # Requirements for automated release script
-anthropic>=0.40.0
-pydantic>=2.0.0
+# Version ranges allow patch/minor updates while preventing breaking changes
+# Tested with Python 3.13.5, anthropic 0.71.0, pydantic 2.12.3
+anthropic>=0.71.0,<1.0
+pydantic>=2.12.3,<3.0

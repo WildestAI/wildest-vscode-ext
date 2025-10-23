@@ -10,7 +10,7 @@ import json
 import subprocess
 import re
 from datetime import date
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union, List
 from pydantic import BaseModel, Field
 import anthropic
 
@@ -28,15 +28,34 @@ class VersionAnalysis(BaseModel):
     )
 
 
-def run_command(cmd: str, check: bool = True) -> str:
-    """Run a shell command and return output."""
-    print(f"Running: {cmd}")
+def run_command(cmd: Union[str, List[str]], check: bool = True) -> str:
+    """
+    Run a command safely without shell injection vulnerabilities.
+
+    Args:
+        cmd: Either a list of command arguments (safe) or a string (for simple commands)
+        check: Whether to raise an error on non-zero exit code
+
+    Returns:
+        Command output as string
+    """
+    if isinstance(cmd, str):
+        print(f"Running: {cmd}")
+    else:
+        print(f"Running: {' '.join(cmd)}")
+
     result = subprocess.run(
-        cmd, shell=True, capture_output=True, text=True, check=check
+        cmd,
+        shell=False,  # SECURITY: Never use shell=True with user input
+        capture_output=True,
+        text=True,
+        check=check
     )
+
     if result.returncode != 0 and check:
         print(f"Error: {result.stderr}")
         sys.exit(1)
+
     return result.stdout.strip()
 
 
@@ -52,10 +71,13 @@ def get_pr_details(base_sha: str, head_sha: str) -> Dict[str, str]:
     pr_title = os.getenv("PR_TITLE", "")
     pr_body = os.getenv("PR_BODY", "No description provided")
 
-    # Get commit messages from the PR
-    commits = run_command(
-        f"git log --format='%s%n%b' {base_sha}..{head_sha}"
-    )
+    # SECURITY: Use list arguments to prevent shell injection
+    # Git SHAs come from GitHub and could theoretically be crafted maliciously
+    commits = run_command([
+        "git", "log",
+        f"--format=%s%n%b",
+        f"{base_sha}..{head_sha}"
+    ])
 
     return {
         "title": pr_title,
@@ -143,7 +165,13 @@ Guidelines for changelog:
 def update_package_json(new_version: str):
     """Update package.json with new version."""
     print(f"Updating package.json to version {new_version}")
-    run_command(f"npm version {new_version} --no-git-tag-version")
+
+    # SECURITY: Validate version format to prevent injection
+    if not re.match(r'^\d+\.\d+\.\d+$', new_version):
+        print(f"Error: Invalid version format: {new_version}")
+        sys.exit(1)
+
+    run_command(["npm", "version", new_version, "--no-git-tag-version"])
 
 
 def update_changelog(changelog_entry: str):
@@ -176,11 +204,17 @@ def update_changelog(changelog_entry: str):
 def commit_and_push(new_version: str):
     """Commit version changes and push."""
     print("Committing version changes")
-    run_command("git config user.name 'github-actions[bot]'")
-    run_command("git config user.email 'github-actions[bot]@users.noreply.github.com'")
-    run_command("git add package.json package-lock.json CHANGELOG.md")
-    run_command(f"git commit -m 'chore: bump version to {new_version} [skip ci]'")
-    run_command("git push")
+
+    # SECURITY: Validate version format
+    if not re.match(r'^\d+\.\d+\.\d+$', new_version):
+        print(f"Error: Invalid version format: {new_version}")
+        sys.exit(1)
+
+    run_command(["git", "config", "user.name", "github-actions[bot]"])
+    run_command(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"])
+    run_command(["git", "add", "package.json", "package-lock.json", "CHANGELOG.md"])
+    run_command(["git", "commit", "-m", f"chore: bump version to {new_version} [skip ci]"])
+    run_command(["git", "push"])
 
 
 def publish_extension():
@@ -194,26 +228,33 @@ def publish_extension():
 
     # Install publishing tools
     print("Installing vsce and ovsx")
-    run_command("npm install -g @vscode/vsce ovsx")
+    run_command(["npm", "install", "-g", "@vscode/vsce", "ovsx"])
 
     # Build extension
     print("Building extension")
-    run_command("npm run package")
+    run_command(["npm", "run", "package"])
 
+    # SECURITY: Pass tokens as arguments, not in shell commands
     # Publish to VSCode Marketplace
     print("Publishing to VSCode Marketplace")
-    run_command(f"vsce publish -p {vsce_token}")
+    run_command(["vsce", "publish", "-p", vsce_token])
 
     # Publish to Open VSX
     print("Publishing to Open VSX")
-    run_command(f"ovsx publish -p {ovsx_token}")
+    run_command(["ovsx", "publish", "-p", ovsx_token])
 
 
 def create_git_tag(new_version: str):
     """Create and push git tag."""
     print(f"Creating git tag v{new_version}")
-    run_command(f"git tag -a 'v{new_version}' -m 'Release version {new_version}'")
-    run_command("git push --tags")
+
+    # SECURITY: Validate version format
+    if not re.match(r'^\d+\.\d+\.\d+$', new_version):
+        print(f"Error: Invalid version format: {new_version}")
+        sys.exit(1)
+
+    run_command(["git", "tag", "-a", f"v{new_version}", "-m", f"Release version {new_version}"])
+    run_command(["git", "push", "--tags"])
 
 
 def main():
@@ -226,6 +267,11 @@ def main():
 
     if not base_sha or not head_sha:
         print("Error: BASE_SHA or HEAD_SHA not set")
+        sys.exit(1)
+
+    # SECURITY: Validate SHA format (40 hex characters for full SHA)
+    if not re.match(r'^[0-9a-f]{7,40}$', base_sha) or not re.match(r'^[0-9a-f]{7,40}$', head_sha):
+        print("Error: Invalid SHA format")
         sys.exit(1)
 
     # Step 1: Get current version

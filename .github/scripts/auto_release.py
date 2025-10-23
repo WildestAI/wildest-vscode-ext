@@ -128,8 +128,9 @@ Guidelines for changelog:
 
     try:
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",  # Latest Sonnet 4.5
+            model="claude-sonnet-4-5-20250929",  # Sonnet 4.5
             max_tokens=2048,
+            timeout=60.0,  # 60 second timeout to prevent indefinite hangs
             messages=[{
                 "role": "user",
                 "content": prompt

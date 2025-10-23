@@ -8,6 +8,15 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 - History visualization tools are in development and will be added in future releases.
 
+## [1.0.5] - 2025-10-22
+
+### Fixed
+- History and changes not appearing on startup without manual refresh
+- Error handling and retry logic in Git repository initialization to prevent infinite loops
+
+### Added
+- Loading overlay and caching for Git history retrieval for improved performance
+
 ## [1.0.3] - 2025-08-18
 
 ### Added

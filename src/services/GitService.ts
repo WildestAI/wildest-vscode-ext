@@ -5,6 +5,7 @@ import { GitInfo } from '../utils/types';
 export class GitService {
 	private static gitAPI: any;
 	private static initializationPromise: Promise<void> | undefined;
+	private static stateChangeDisposable: vscode.Disposable | undefined;
 
 	private static async waitForGitInitialization(maxAttempts: number = 10, delayMs: number = 1000): Promise<void> {
 		if (!this.initializationPromise) {
@@ -27,9 +28,16 @@ export class GitService {
 
 		this.gitAPI = gitExtension.exports.getAPI(1);
 
+		// Dispose previous subscription to prevent memory leaks on re-initialization
+		this.stateChangeDisposable?.dispose();
+
 		// Subscribe to repository change events
-		this.gitAPI.onDidChangeState(() => {
-			// State has changed, repositories might be available now
+		this.stateChangeDisposable = this.gitAPI.onDidChangeState(() => {
+			// TODO: Future feature - Auto-generate wild diff on git state changes (behind feature flag)
+			// When implementing:
+			// 1. Add a VSCode extension setting for enabling auto-diff generation
+			// 2. Check the feature flag from extension settings
+			// 3. If enabled, trigger CliService.generateDiff() for affected repositories
 		});
 
 		let attempts = 0;

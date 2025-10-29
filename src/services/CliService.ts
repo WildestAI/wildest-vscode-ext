@@ -76,7 +76,7 @@ export class CliService {
 	}
 
 	private static getDevCommand(args: string[] = [], env: NodeJS.ProcessEnv): CliCommand {
-		const defaultVenvPath = path.join(__dirname, '..', 'DiffGraph-CLI', '.venv');
+		const defaultVenvPath = path.join(__dirname, '..', '..', 'DiffGraph-CLI', '.venv');
 		const venvPath = process.env.WILDEST_VENV_PATH || defaultVenvPath;
 		const binDir = os.platform() === 'win32' ? 'Scripts' : 'bin';
 		if (!fs.existsSync(venvPath) || !fs.existsSync(path.join(venvPath, binDir, 'wild'))) {

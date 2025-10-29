@@ -15,7 +15,10 @@
 			],
 			"preLaunchTask": "npm: compile",
 			"request": "launch",
-			"type": "extensionHost"
+			"type": "extensionHost",
+			"env": {
+				"WILDEST_DEV_MODE": "1"
+			}
 		}
 	]
 }

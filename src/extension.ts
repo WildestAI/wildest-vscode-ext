@@ -19,6 +19,7 @@ import { DiffGraphViewProvider } from './providers/DiffGraphViewProvider';
 import { HistoryViewProvider } from './providers/HistoryViewProvider';
 import { DiffService } from './services/DiffService';
 import { GitService } from './services/GitService';
+import { CliService } from './services/CliService';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -67,6 +68,27 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage('Hello World from Wildest AI!');
 	});
 	context.subscriptions.push(helloDisposable);
+
+	const runtimeDiagnosticsOutput = vscode.window.createOutputChannel('WildestAI Diagnostics');
+	context.subscriptions.push(runtimeDiagnosticsOutput);
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', () => {
+		const diagnostics = CliService.inspectRuntime(context);
+		const extensionVersion = context.extension.packageJSON.version || 'unknown';
+		runtimeDiagnosticsOutput.clear();
+		runtimeDiagnosticsOutput.appendLine('WildestAI runtime diagnostics');
+		runtimeDiagnosticsOutput.appendLine(`Extension version: ${extensionVersion}`);
+		runtimeDiagnosticsOutput.appendLine(`CLI source: ${diagnostics.source}`);
+		runtimeDiagnosticsOutput.appendLine(`CLI status: ${diagnostics.status}`);
+		runtimeDiagnosticsOutput.appendLine(`Platform: ${diagnostics.platform}/${diagnostics.architecture}`);
+		runtimeDiagnosticsOutput.appendLine(`CLI path: ${diagnostics.executable || 'not available'}`);
+		runtimeDiagnosticsOutput.appendLine(`Details: ${diagnostics.detail}`);
+		runtimeDiagnosticsOutput.appendLine('Provider readiness: not yet configured by this extension');
+		runtimeDiagnosticsOutput.show(true);
+
+		if (diagnostics.status !== 'ready') {
+			void vscode.window.showWarningMessage(`WildestAI CLI ${diagnostics.status}: ${diagnostics.detail}`);
+		}
+	}));
 
 	// Register legacy commands for backwards compatibility
 	const openChangesDisposable = vscode.commands.registerCommand('wildestai.openChanges', async (treeItemOrRepoPath?: any) => {

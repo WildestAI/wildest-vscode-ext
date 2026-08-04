@@ -92,6 +92,11 @@
         "command": "wildestai.refreshHistory",
         "title": "Wildest AI: Refresh History",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "wildestai.showRuntimeDiagnostics",
+        "title": "Wildest AI: Show Runtime Diagnostics",
+        "category": "Wildest AI"
       }
     ],
     "menus": {

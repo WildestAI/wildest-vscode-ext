@@ -2,20 +2,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import * as assert from 'assert';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { CliService } from '../services/CliService';
 
 suite('CliService runtime diagnostics', () => {
-	const context = { extensionPath: '/extension' } as vscode.ExtensionContext;
+	const context = {
+		extensionPath: path.join(path.parse(process.cwd()).root, 'extension'),
+	} as vscode.ExtensionContext;
 
 	test('reports a ready packaged binary for an exact supported target', () => {
+		const executable = path.join(context.extensionPath, 'bin', 'wild-linux-arm64');
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'linux', architecture: 'arm64', env: {},
-			existsSync: candidate => candidate.toString() === '/extension/bin/wild-linux-arm64',
+			existsSync: candidate => candidate.toString() === executable,
 			accessSync: () => undefined,
 		});
 		assert.strictEqual(diagnostics.status, 'ready');
-		assert.strictEqual(diagnostics.executable, '/extension/bin/wild-linux-arm64');
+		assert.strictEqual(diagnostics.executable, executable);
 	});
 
 	test('reports a missing binary with reinstall guidance', () => {
@@ -47,14 +51,16 @@ suite('CliService runtime diagnostics', () => {
 	});
 
 	test('reports development virtual environment readiness', () => {
+		const venvPath = path.join(path.parse(process.cwd()).root, 'venv');
+		const executable = path.join(venvPath, 'bin', 'wild');
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'linux', architecture: 'x64',
-			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: '/venv' },
-			existsSync: candidate => ['/venv', '/venv/bin/wild'].includes(candidate.toString()),
+			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
+			existsSync: candidate => [venvPath, executable].includes(candidate.toString()),
 			accessSync: () => undefined,
 		});
 		assert.strictEqual(diagnostics.source, 'development environment');
 		assert.strictEqual(diagnostics.status, 'ready');
-		assert.strictEqual(diagnostics.executable, '/venv/bin/wild');
+		assert.strictEqual(diagnostics.executable, executable);
 	});
 });

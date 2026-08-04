@@ -89,7 +89,7 @@ export class CliService {
 			executable,
 			detail: ready
 				? 'The packaged CLI is available.'
-				: `The packaged CLI is missing. Reinstall the extension; expected ${binaryName} in the extension bin directory.`,
+				: `The packaged CLI is missing. Install a release that includes ${binaryName} in the extension bin directory.`,
 		};
 	}
 

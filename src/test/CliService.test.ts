@@ -22,13 +22,13 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(diagnostics.executable, executable);
 	});
 
-	test('reports a missing binary with reinstall guidance', () => {
+	test('reports a missing binary with release guidance', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => false,
 			accessSync: () => undefined,
 		});
 		assert.strictEqual(diagnostics.status, 'missing');
-		assert.match(diagnostics.detail, /Reinstall the extension/);
+		assert.match(diagnostics.detail, /Install a release that includes/);
 		assert.match(diagnostics.detail, /wild-macos-x64/);
 	});
 

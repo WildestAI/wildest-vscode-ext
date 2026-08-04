@@ -21,7 +21,7 @@ WildestAI is a Visual Studio Code extension that enhances your development workf
 
 - Visual Studio Code 1.99.0 or later
 - A Git repository must be open in your workspace
-- Production installations use only the CLI bundled with the extension. Supported packaged targets are macOS x64/ARM64, Linux x64/ARM64, and Windows x64; other targets are rejected rather than running an incompatible binary.
+- Production runtime selection uses only a CLI artifact bundled with the extension. It recognizes package targets for macOS x64/ARM64, Linux x64/ARM64, and Windows x64; other targets are rejected rather than running an incompatible binary. Diagnostics report a missing runtime when the selected release does not contain that artifact. Clean-install packaging and smoke-test coverage remain tracked in [issue #19](https://github.com/WildestAI/wildest-vscode-ext/issues/19).
 - Development mode uses a Python virtual environment only when `WILDEST_DEV_MODE=1` or `NODE_ENV=development`. Set `WILDEST_VENV_PATH` when the environment is not at the default development path.
 
 Run **Wildest AI: Show Runtime Diagnostics** from the Command Palette to see the extension version, selected CLI source and path, platform, and actionable readiness status. The report contains no API keys or provider credentials.

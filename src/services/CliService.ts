@@ -21,6 +21,7 @@ interface RuntimeEnvironment {
 	architecture: string;
 	env: NodeJS.ProcessEnv;
 	existsSync: (candidate: fs.PathLike) => boolean;
+	accessSync: (candidate: fs.PathLike, mode?: number) => void;
 }
 
 export class CliService {
@@ -31,17 +32,29 @@ export class CliService {
 			architecture: os.arch(),
 			env: process.env,
 			existsSync: fs.existsSync,
+			accessSync: fs.accessSync,
 		}
 	): CliRuntimeDiagnostics {
 		const isDevMode = runtime.env.WILDEST_DEV_MODE === '1' ||
 			runtime.env.NODE_ENV === 'development';
+		const isExecutable = (candidate: fs.PathLike): boolean => {
+			if (!runtime.existsSync(candidate)) {
+				return false;
+			}
+			try {
+				runtime.accessSync(candidate, fs.constants.X_OK);
+				return true;
+			} catch {
+				return false;
+			}
+		};
 
 		if (isDevMode) {
 			const defaultVenvPath = path.join(__dirname, '..', 'DiffGraph-CLI', '.venv');
 			const venvPath = runtime.env.WILDEST_VENV_PATH || defaultVenvPath;
 			const binDir = runtime.platform === 'win32' ? 'Scripts' : 'bin';
 			const executable = path.join(venvPath, binDir, runtime.platform === 'win32' ? 'wild.exe' : 'wild');
-			const ready = runtime.existsSync(venvPath) && runtime.existsSync(executable);
+			const ready = runtime.existsSync(venvPath) && isExecutable(executable);
 
 			return {
 				source: 'development environment',
@@ -67,7 +80,7 @@ export class CliService {
 		}
 
 		const executable = path.join(context.extensionPath, 'bin', binaryName);
-		const ready = runtime.existsSync(executable);
+		const ready = isExecutable(executable);
 		return {
 			source: 'packaged binary',
 			status: ready ? 'ready' : 'missing',

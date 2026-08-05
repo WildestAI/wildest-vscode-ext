@@ -5,7 +5,94 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 
+export type CliRuntimeStatus = 'ready' | 'missing' | 'unsupported';
+
+export interface CliRuntimeDiagnostics {
+	source: 'development environment' | 'packaged binary';
+	status: CliRuntimeStatus;
+	platform: string;
+	architecture: string;
+	executable?: string;
+	detail: string;
+}
+
+interface RuntimeEnvironment {
+	platform: NodeJS.Platform;
+	architecture: string;
+	env: NodeJS.ProcessEnv;
+	existsSync: (candidate: fs.PathLike) => boolean;
+	accessSync: (candidate: fs.PathLike, mode?: number) => void;
+}
+
 export class CliService {
+	public static inspectRuntime(
+		context: vscode.ExtensionContext,
+		runtime: RuntimeEnvironment = {
+			platform: os.platform(),
+			architecture: os.arch(),
+			env: process.env,
+			existsSync: fs.existsSync,
+			accessSync: fs.accessSync,
+		}
+	): CliRuntimeDiagnostics {
+		const isDevMode = runtime.env.WILDEST_DEV_MODE === '1' ||
+			runtime.env.NODE_ENV === 'development';
+		const isExecutable = (candidate: fs.PathLike): boolean => {
+			if (!runtime.existsSync(candidate)) {
+				return false;
+			}
+			try {
+				runtime.accessSync(candidate, fs.constants.X_OK);
+				return true;
+			} catch {
+				return false;
+			}
+		};
+
+		if (isDevMode) {
+			const defaultVenvPath = path.join(__dirname, '..', 'DiffGraph-CLI', '.venv');
+			const venvPath = runtime.env.WILDEST_VENV_PATH || defaultVenvPath;
+			const binDir = runtime.platform === 'win32' ? 'Scripts' : 'bin';
+			const executable = path.join(venvPath, binDir, runtime.platform === 'win32' ? 'wild.exe' : 'wild');
+			const ready = runtime.existsSync(venvPath) && isExecutable(executable);
+
+			return {
+				source: 'development environment',
+				status: ready ? 'ready' : 'missing',
+				platform: runtime.platform,
+				architecture: runtime.architecture,
+				executable,
+				detail: ready
+					? 'The configured development CLI is available.'
+					: 'The configured virtual environment or wild executable is missing. Set WILDEST_VENV_PATH to a valid environment.',
+			};
+		}
+
+		const binaryName = this.getBinaryName(runtime.platform, runtime.architecture);
+		if (!binaryName) {
+			return {
+				source: 'packaged binary',
+				status: 'unsupported',
+				platform: runtime.platform,
+				architecture: runtime.architecture,
+				detail: `No packaged WildestAI CLI is available for ${runtime.platform}/${runtime.architecture}.`,
+			};
+		}
+
+		const executable = path.join(context.extensionPath, 'bin', binaryName);
+		const ready = isExecutable(executable);
+		return {
+			source: 'packaged binary',
+			status: ready ? 'ready' : 'missing',
+			platform: runtime.platform,
+			architecture: runtime.architecture,
+			executable,
+			detail: ready
+				? 'The packaged CLI is available.'
+				: `The packaged CLI is missing. Install a release that includes ${binaryName} in the extension bin directory.`,
+		};
+	}
+
 	public static setupCommand(args: string[] = [], context: vscode.ExtensionContext): CliCommand {
 		let env = Object.assign({}, process.env);
 		const isDevMode = process.env.WILDEST_DEV_MODE === '1' ||
@@ -78,8 +165,10 @@ export class CliService {
 	private static getDevCommand(args: string[] = [], env: NodeJS.ProcessEnv): CliCommand {
 		const defaultVenvPath = path.join(__dirname, '..', '..', 'DiffGraph-CLI', '.venv');
 		const venvPath = process.env.WILDEST_VENV_PATH || defaultVenvPath;
-		const binDir = os.platform() === 'win32' ? 'Scripts' : 'bin';
-		if (!fs.existsSync(venvPath) || !fs.existsSync(path.join(venvPath, binDir, 'wild'))) {
+		const isWindows = os.platform() === 'win32';
+		const binDir = isWindows ? 'Scripts' : 'bin';
+		const executableName = isWindows ? 'wild.exe' : 'wild';
+		if (!fs.existsSync(venvPath) || !fs.existsSync(path.join(venvPath, binDir, executableName))) {
 			throw new Error(`Virtual environment not found or invalid at path: ${venvPath}. Please set WILDEST_VENV_PATH environment variable to point to a valid virtual environment.`);
 		}
 		const venvBin = path.join(venvPath, binDir);
@@ -110,17 +199,9 @@ export class CliService {
 	private static getBinaryPath(context: vscode.ExtensionContext): string {
 		const platform = os.platform();
 		const arch = os.arch();
+		const binaryName = this.getBinaryName(platform, arch);
 
-		let binaryName = '';
-		if (platform === 'darwin' && arch === 'arm64') {
-			binaryName = 'wild-macos-arm64';
-		} else if (platform === 'darwin') {
-			binaryName = 'wild-macos-x64';
-		} else if (platform === 'linux') {
-			binaryName = 'wild-linux-x64';
-		} else if (platform === 'win32') {
-			binaryName = 'wild-win.exe';
-		} else {
+		if (!binaryName) {
 			throw new Error(`Unsupported platform: ${platform} ${arch}`);
 		}
 
@@ -131,5 +212,15 @@ export class CliService {
 		}
 
 		return binaryPath;
+	}
+
+	private static getBinaryName(platform: NodeJS.Platform, arch: string): string | undefined {
+		const binaries: Partial<Record<NodeJS.Platform, Record<string, string>>> = {
+			darwin: { arm64: 'wild-macos-arm64', x64: 'wild-macos-x64' },
+			linux: { arm64: 'wild-linux-arm64', x64: 'wild-linux-x64' },
+			win32: { x64: 'wild-win.exe' },
+		};
+
+		return binaries[platform]?.[arch];
 	}
 }

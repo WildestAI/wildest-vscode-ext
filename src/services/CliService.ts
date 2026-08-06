@@ -16,7 +16,7 @@ export interface CliRuntimeDiagnostics {
 	detail: string;
 }
 
-interface RuntimeEnvironment {
+export interface RuntimeEnvironment {
 	platform: NodeJS.Platform;
 	architecture: string;
 	env: NodeJS.ProcessEnv;
@@ -27,34 +27,14 @@ interface RuntimeEnvironment {
 export class CliService {
 	public static inspectRuntime(
 		context: vscode.ExtensionContext,
-		runtime: RuntimeEnvironment = {
-			platform: os.platform(),
-			architecture: os.arch(),
-			env: process.env,
-			existsSync: fs.existsSync,
-			accessSync: fs.accessSync,
-		}
+		runtime: RuntimeEnvironment = this.getRuntimeEnvironment()
 	): CliRuntimeDiagnostics {
 		const isDevMode = runtime.env.WILDEST_DEV_MODE === '1' ||
 			runtime.env.NODE_ENV === 'development';
-		const isExecutable = (candidate: fs.PathLike): boolean => {
-			if (!runtime.existsSync(candidate)) {
-				return false;
-			}
-			try {
-				runtime.accessSync(candidate, fs.constants.X_OK);
-				return true;
-			} catch {
-				return false;
-			}
-		};
 
 		if (isDevMode) {
-			const defaultVenvPath = path.join(__dirname, '..', 'DiffGraph-CLI', '.venv');
-			const venvPath = runtime.env.WILDEST_VENV_PATH || defaultVenvPath;
-			const binDir = runtime.platform === 'win32' ? 'Scripts' : 'bin';
-			const executable = path.join(venvPath, binDir, runtime.platform === 'win32' ? 'wild.exe' : 'wild');
-			const ready = runtime.existsSync(venvPath) && isExecutable(executable);
+			const { venvPath, executable } = this.resolveDevRuntime(context, runtime);
+			const ready = runtime.existsSync(venvPath) && this.isExecutable(executable, runtime);
 
 			return {
 				source: 'development environment',
@@ -80,7 +60,7 @@ export class CliService {
 		}
 
 		const executable = path.join(context.extensionPath, 'bin', binaryName);
-		const ready = isExecutable(executable);
+		const ready = this.isExecutable(executable, runtime);
 		return {
 			source: 'packaged binary',
 			status: ready ? 'ready' : 'missing',
@@ -93,13 +73,17 @@ export class CliService {
 		};
 	}
 
-	public static setupCommand(args: string[] = [], context: vscode.ExtensionContext): CliCommand {
-		let env = Object.assign({}, process.env);
-		const isDevMode = process.env.WILDEST_DEV_MODE === '1' ||
-			process.env.NODE_ENV === 'development';
+	public static setupCommand(
+		args: string[] = [],
+		context: vscode.ExtensionContext,
+		runtime: RuntimeEnvironment = this.getRuntimeEnvironment(),
+	): CliCommand {
+		const env = Object.assign({}, runtime.env);
+		const isDevMode = runtime.env.WILDEST_DEV_MODE === '1' ||
+			runtime.env.NODE_ENV === 'development';
 
 		if (isDevMode) {
-			return this.getDevCommand(args, env);
+			return this.getDevCommand(args, env, context, runtime);
 		} else {
 			return this.getProdCommand(args, env, context);
 		}
@@ -162,13 +146,14 @@ export class CliService {
 		return { stdout: cliStdout, stderr: cliStderr };
 	}
 
-	private static getDevCommand(args: string[] = [], env: NodeJS.ProcessEnv): CliCommand {
-		const defaultVenvPath = path.join(__dirname, '..', '..', 'DiffGraph-CLI', '.venv');
-		const venvPath = process.env.WILDEST_VENV_PATH || defaultVenvPath;
-		const isWindows = os.platform() === 'win32';
-		const binDir = isWindows ? 'Scripts' : 'bin';
-		const executableName = isWindows ? 'wild.exe' : 'wild';
-		if (!fs.existsSync(venvPath) || !fs.existsSync(path.join(venvPath, binDir, executableName))) {
+	private static getDevCommand(
+		args: string[] = [],
+		env: NodeJS.ProcessEnv,
+		context: vscode.ExtensionContext,
+		runtime: RuntimeEnvironment,
+	): CliCommand {
+		const { venvPath, binDir, executable } = this.resolveDevRuntime(context, runtime);
+		if (!runtime.existsSync(venvPath) || !this.isExecutable(executable, runtime)) {
 			throw new Error(`Virtual environment not found or invalid at path: ${venvPath}. Please set WILDEST_VENV_PATH environment variable to point to a valid virtual environment.`);
 		}
 		const venvBin = path.join(venvPath, binDir);
@@ -177,9 +162,43 @@ export class CliService {
 			VIRTUAL_ENV: venvPath
 		});
 		return {
-			executable: 'wild',
+			executable,
 			args: args,
 			env
+		};
+	}
+
+	private static resolveDevRuntime(
+		context: vscode.ExtensionContext,
+		runtime: RuntimeEnvironment,
+	): { venvPath: string; binDir: string; executable: string } {
+		const defaultVenvPath = path.resolve(context.extensionPath, '..', 'DiffGraph-CLI', '.venv');
+		const venvPath = runtime.env.WILDEST_VENV_PATH || defaultVenvPath;
+		const isWindows = runtime.platform === 'win32';
+		const binDir = isWindows ? 'Scripts' : 'bin';
+		const executable = path.join(venvPath, binDir, isWindows ? 'wild.exe' : 'wild');
+		return { venvPath, binDir, executable };
+	}
+
+	private static isExecutable(candidate: fs.PathLike, runtime: RuntimeEnvironment): boolean {
+		if (!runtime.existsSync(candidate)) {
+			return false;
+		}
+		try {
+			runtime.accessSync(candidate, fs.constants.X_OK);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	private static getRuntimeEnvironment(): RuntimeEnvironment {
+		return {
+			platform: os.platform(),
+			architecture: os.arch(),
+			env: process.env,
+			existsSync: fs.existsSync,
+			accessSync: fs.accessSync,
 		};
 	}
 

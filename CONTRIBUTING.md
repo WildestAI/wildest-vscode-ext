@@ -6,7 +6,7 @@ Thank you for your interest in contributing to the WildestAI VSCode Extension! T
 
 ### Prerequisites
 
-- Node.js (v16 or later)
+- Node.js 20 or later (matching the repository's `@types/node` major)
 - npm
 - Git
 - Python 3.8+ (for CLI development)
@@ -22,7 +22,7 @@ Thank you for your interest in contributing to the WildestAI VSCode Extension! T
 
 2. **Install dependencies**
    ```bash
-   npm install
+   npm ci
    ```
 
 3. **Set up the wild CLI for development**
@@ -53,9 +53,13 @@ Thank you for your interest in contributing to the WildestAI VSCode Extension! T
    export WILDEST_VENV_PATH=/path/to/your/DiffGraph-CLI/.venv
    ```
 
-   Or add it to your VSCode user settings (settings.json):
+   The Extension Development Host does not receive variables configured only in
+   `terminal.integrated.env.*`. Either start VS Code from a shell where the
+   variable is exported (`code .` on macOS/Linux or PowerShell), or add it to
+   the `env` object in `.vscode/launch.json`:
    ```json
-   "terminal.integrated.env.osx": {
+   "env": {
+       "WILDEST_DEV_MODE": "1",
        "WILDEST_VENV_PATH": "/path/to/your/DiffGraph-CLI/.venv"
    }
    ```
@@ -153,9 +157,21 @@ feat: add JSON graph visualization support
 
 ### Testing
 
-- Manual testing: Use F5 to launch the extension and test in a real VSCode window
-- Automated tests: `npm test`
-- Always test with both staged and unstaged changes
+Before opening the Extension Development Host, run this smoke test in order:
+
+1. Install the exact JavaScript dependency lockfile: `npm ci`
+2. Type-check the extension: `npm run check-types`
+3. Activate the development virtual environment and verify its CLI contract:
+   ```bash
+   wild --version
+   wild diff --help
+   ```
+   The `diff` help must list the `--output` and `--no-open` options used by the
+   extension. If `wild` is not on `PATH`, invoke `.venv/bin/wild` on macOS/Linux
+   or `.venv\Scripts\wild.exe` on Windows.
+4. Run the automated extension tests: `npm test`
+5. Press F5 and manually test both staged and unstaged changes in the Extension
+   Development Host.
 
 ### Getting Help
 

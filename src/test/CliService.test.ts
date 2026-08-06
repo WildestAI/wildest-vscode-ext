@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { CliService } from '../services/CliService';
@@ -62,5 +63,45 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(diagnostics.source, 'development environment');
 		assert.strictEqual(diagnostics.status, 'ready');
 		assert.strictEqual(diagnostics.executable, executable);
+	});
+
+	for (const target of [
+		{ platform: 'linux' as NodeJS.Platform, binDir: 'bin', executableName: 'wild' },
+		{ platform: 'win32' as NodeJS.Platform, binDir: 'Scripts', executableName: 'wild.exe' },
+	]) {
+		test(`uses the same ${target.platform} development executable for diagnostics and execution`, () => {
+			const venvPath = path.join(path.parse(process.cwd()).root, `${target.platform}-venv`);
+			const executable = path.join(venvPath, target.binDir, target.executableName);
+			const runtime = {
+				platform: target.platform,
+				architecture: 'x64',
+				env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath, PATH: 'existing-path' },
+				existsSync: (candidate: fs.PathLike) => [venvPath, executable].includes(candidate.toString()),
+				accessSync: () => undefined,
+			};
+
+			const diagnostics = CliService.inspectRuntime(context, runtime);
+			const command = CliService.setupCommand(['--version'], context, runtime);
+
+			assert.strictEqual(diagnostics.status, 'ready');
+			assert.strictEqual(diagnostics.executable, executable);
+			assert.strictEqual(command.executable, executable);
+			assert.strictEqual(command.env.VIRTUAL_ENV, venvPath);
+		});
+	}
+
+	test('resolves the default development environment from the extension root', () => {
+		const venvPath = path.resolve(context.extensionPath, '..', 'DiffGraph-CLI', '.venv');
+		const executable = path.join(venvPath, 'bin', 'wild');
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform,
+			architecture: 'x64',
+			env: { WILDEST_DEV_MODE: '1' },
+			existsSync: (candidate: fs.PathLike) => [venvPath, executable].includes(candidate.toString()),
+			accessSync: () => undefined,
+		};
+
+		assert.strictEqual(CliService.inspectRuntime(context, runtime).executable, executable);
+		assert.strictEqual(CliService.setupCommand([], context, runtime).executable, executable);
 	});
 });

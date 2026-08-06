@@ -48,7 +48,7 @@ export class CliService {
 			};
 		}
 
-		const binaryName = this.getBinaryName(runtime.platform, runtime.architecture);
+		const { binaryName, executable } = this.resolveProdRuntime(context, runtime);
 		if (!binaryName) {
 			return {
 				source: 'packaged binary',
@@ -59,7 +59,6 @@ export class CliService {
 			};
 		}
 
-		const executable = path.join(context.extensionPath, 'bin', binaryName);
 		const ready = this.isExecutable(executable, runtime);
 		return {
 			source: 'packaged binary',
@@ -85,7 +84,7 @@ export class CliService {
 		if (isDevMode) {
 			return this.getDevCommand(args, env, context, runtime);
 		} else {
-			return this.getProdCommand(args, env, context);
+			return this.getProdCommand(args, env, context, runtime);
 		}
 	}
 
@@ -206,31 +205,29 @@ export class CliService {
 		args: string[] = [],
 		env: NodeJS.ProcessEnv,
 		context: vscode.ExtensionContext,
+		runtime: RuntimeEnvironment,
 	): CliCommand {
-		const wildBinary = this.getBinaryPath(context);
+		const { binaryName, executable } = this.resolveProdRuntime(context, runtime);
+		if (!binaryName) {
+			throw new Error(`Unsupported platform: ${runtime.platform} ${runtime.architecture}`);
+		}
+		if (!this.isExecutable(executable, runtime)) {
+			throw new Error(`Binary not found or not executable: ${executable}`);
+		}
 		return {
-			executable: wildBinary,
+			executable,
 			args: args,
 			env
 		};
 	}
 
-	private static getBinaryPath(context: vscode.ExtensionContext): string {
-		const platform = os.platform();
-		const arch = os.arch();
-		const binaryName = this.getBinaryName(platform, arch);
-
-		if (!binaryName) {
-			throw new Error(`Unsupported platform: ${platform} ${arch}`);
-		}
-
-		const binaryPath = path.join(context.extensionPath, 'bin', binaryName);
-
-		if (!fs.existsSync(binaryPath)) {
-			throw new Error(`Binary not found: ${binaryPath}`);
-		}
-
-		return binaryPath;
+	private static resolveProdRuntime(
+		context: vscode.ExtensionContext,
+		runtime: RuntimeEnvironment,
+	): { binaryName: string | undefined; executable: string } {
+		const binaryName = this.getBinaryName(runtime.platform, runtime.architecture);
+		const executable = binaryName ? path.join(context.extensionPath, 'bin', binaryName) : '';
+		return { binaryName, executable };
 	}
 
 	private static getBinaryName(platform: NodeJS.Platform, arch: string): string | undefined {

@@ -12,15 +12,18 @@ suite('CliService runtime diagnostics', () => {
 		extensionPath: path.join(path.parse(process.cwd()).root, 'extension'),
 	} as vscode.ExtensionContext;
 
-	test('reports a ready packaged binary for an exact supported target', () => {
+	test('uses the same ready packaged binary for diagnostics and execution', () => {
 		const executable = path.join(context.extensionPath, 'bin', 'wild-linux-arm64');
-		const diagnostics = CliService.inspectRuntime(context, {
-			platform: 'linux', architecture: 'arm64', env: {},
-			existsSync: candidate => candidate.toString() === executable,
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'arm64', env: {},
+			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
 			accessSync: () => undefined,
-		});
+		};
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		const command = CliService.setupCommand(['--version'], context, runtime);
 		assert.strictEqual(diagnostics.status, 'ready');
 		assert.strictEqual(diagnostics.executable, executable);
+		assert.strictEqual(command.executable, executable);
 	});
 
 	test('reports a missing binary with release guidance', () => {
@@ -33,12 +36,17 @@ suite('CliService runtime diagnostics', () => {
 		assert.match(diagnostics.detail, /wild-macos-x64/);
 	});
 
-	test('does not report a present but non-executable packaged binary as ready', () => {
-		const diagnostics = CliService.inspectRuntime(context, {
-			platform: 'linux', architecture: 'x64', env: {}, existsSync: () => true,
+	test('rejects a present but non-executable packaged binary consistently', () => {
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
 			accessSync: () => { throw new Error('EACCES'); },
-		});
+		};
+		const diagnostics = CliService.inspectRuntime(context, runtime);
 		assert.strictEqual(diagnostics.status, 'missing');
+		assert.throws(
+			() => CliService.setupCommand([], context, runtime),
+			/not executable/
+		);
 	});
 
 	test('rejects unsupported architecture instead of selecting a wrong binary', () => {

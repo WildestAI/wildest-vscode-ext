@@ -16,6 +16,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { DiffGraphExplorerProvider } from '../providers/DiffGraphExplorerProvider';
+import { GitService } from '../services/GitService';
 import { ChangesViewNode } from '../utils/types';
 
 suite('DiffGraphExplorerProvider Test Suite', () => {
@@ -117,15 +118,20 @@ suite('DiffGraphExplorerProvider Test Suite', () => {
 	test('updateRepositories calls refresh', async () => {
 		let refreshCalled = false;
 
+		const originalGetRepositories = GitService.getRepositories;
 		const originalRefresh = provider.refresh;
+		GitService.getRepositories = async () => [];
 		provider.refresh = () => {
 			refreshCalled = true;
 			originalRefresh.call(provider);
 		};
 
-		await provider.updateRepositories();
-
-		assert.strictEqual(refreshCalled, true, 'Refresh should be called during updateRepositories');
-		provider.refresh = originalRefresh;
+		try {
+			await provider.updateRepositories();
+			assert.strictEqual(refreshCalled, true, 'Refresh should be called during updateRepositories');
+		} finally {
+			GitService.getRepositories = originalGetRepositories;
+			provider.refresh = originalRefresh;
+		}
 	});
 });

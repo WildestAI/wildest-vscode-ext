@@ -83,6 +83,23 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(messages.find(message => message.type === 'commits').commits[0].hash, commit.hash);
 	});
 
+	test('refetches history when the cache is older than five minutes', async () => {
+		const originalDateNow = Date.now;
+		const cachedAt = originalDateNow();
+		Date.now = () => cachedAt;
+		GitHistoryCache.update(repoRoot, [commit], ['* ']);
+		Date.now = () => cachedAt + (5 * 60 * 1000) + 1;
+
+		try {
+			await (provider as any).loadGitHistory(false);
+		} finally {
+			Date.now = originalDateNow;
+		}
+
+		assert.strictEqual(executeCalls, 1);
+		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 1);
+	});
+
 	test('fetches and caches history on a cold initial load', async () => {
 		await (provider as any).loadGitHistory(false);
 

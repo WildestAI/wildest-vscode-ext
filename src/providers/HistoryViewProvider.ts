@@ -35,27 +35,27 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			if (message.command === 'commitClicked' && message.commitHash && message.repoPath) {
 				await this._onCommitClicked(message.commitHash, message.repoPath);
 			} else if (message.command === 'refresh') {
-				await this.refresh();
+				await this.refresh(true);
 			}
 		});
 
-		this.refresh();
+		void this.refresh(false);
 	}
 
-	public async refresh(): Promise<void> {
+	public async refresh(forceRefresh = true): Promise<void> {
 		try {
-			await this.loadGitHistory();
+			await this.loadGitHistory(forceRefresh);
 		} catch (error) {
 			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
 				// If we hit a timeout, schedule another refresh attempt
-				setTimeout(() => this.refresh(), 2000);
+				setTimeout(() => void this.refresh(forceRefresh), 2000);
 			} else {
 				throw error;
 			}
 		}
 	}
 
-	private async loadGitHistory(): Promise<void> {
+	private async loadGitHistory(forceRefresh: boolean): Promise<void> {
 		if (!this._view) {
 			return;
 		}
@@ -63,6 +63,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		// Show loading state immediately at the start
 		this._view.webview.postMessage({ type: 'loading', state: true });
 
+		let hasUsableHistory = false;
 		try {
 			const repositories = await GitService.getRepositories();
 			if (repositories.length === 0) {
@@ -90,9 +91,12 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					repoPath: repoRoot,
 					repoName
 				});
+				hasUsableHistory = true;
+				if (!forceRefresh) {
+					return;
+				}
 			}
 
-			// Always fetch fresh data
 			const { commits, graphLines } = await this.getGitCommits(repoRoot);
 
 			const graphData = this.buildGraphData(commits, graphLines);
@@ -107,7 +111,15 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				repoName
 			});
 		} catch (error: any) {
-			this._view.webview.postMessage({ type: 'error', message: error.message ?? String(error) });
+			if (hasUsableHistory) {
+				void vscode.window.showWarningMessage('WildestAI could not refresh Git history. Showing the last cached result.');
+			} else {
+				this._view.webview.postMessage({ type: 'error', message: error.message ?? String(error) });
+			}
+
+			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
+				throw error;
+			}
 		} finally {
 			// Ensure loading state is turned off in case of unexpected errors
 			this._view.webview.postMessage({ type: 'loading', state: false });

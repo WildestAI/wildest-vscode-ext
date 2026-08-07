@@ -133,24 +133,38 @@ suite('HistoryViewProvider cache policy', () => {
 	});
 
 	test('schedules another refresh when Git history times out', async () => {
+		let resolveRetry: () => void;
+		const retryCompleted = new Promise<void>(resolve => { resolveRetry = resolve; });
 		CliService.execute = async () => {
 			executeCalls++;
-			throw new Error('Timeout waiting for Git');
+			if (executeCalls === 1) {
+				throw new Error('Timeout waiting for Git');
+			}
+			resolveRetry();
+			return {
+				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
+				stderr: '',
+			};
 		};
 		const originalSetTimeout = global.setTimeout;
+		let scheduledCallback: (() => void) | undefined;
 		let scheduledDelay: number | undefined;
 		global.setTimeout = ((callback: () => void, delay?: number) => {
+			scheduledCallback = callback;
 			scheduledDelay = delay;
 			return {} as NodeJS.Timeout;
 		}) as typeof global.setTimeout;
 
 		try {
 			await provider.refresh(true);
+			assert.ok(scheduledCallback);
+			scheduledCallback();
+			await retryCompleted;
 		} finally {
 			global.setTimeout = originalSetTimeout;
 		}
 
-		assert.strictEqual(executeCalls, 1);
+		assert.strictEqual(executeCalls, 2);
 		assert.strictEqual(scheduledDelay, 2000);
 	});
 });

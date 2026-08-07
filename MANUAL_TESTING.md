@@ -112,7 +112,20 @@ This document provides a guide for manually testing the multi-repo workspace fun
 - Refreshing one should not affect the cache of the other
 - Different content should be shown in each graph
 
-### 7. Edge Cases
+### 7. Git History Warm Cache and Refresh
+
+**Warm open:**
+1. Open the History view and wait for commits to render.
+2. Hide and reopen the view within five minutes.
+3. Verify the cached history renders without another CLI fetch or visible replacement.
+
+**Explicit refresh:**
+1. Use the History view refresh button while a warm result is visible.
+2. Verify a fresh fetch runs and replaces the graph only after it succeeds.
+3. Temporarily make the CLI unavailable and refresh again.
+4. Verify the previous graph remains visible and a warning explains that cached history is being shown.
+
+### 8. Edge Cases
 
 **Empty Repository State:**
 - Test with repositories that have no changes

@@ -116,6 +116,10 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			} else {
 				this._view.webview.postMessage({ type: 'error', message: error.message ?? String(error) });
 			}
+
+			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
+				throw error;
+			}
 		} finally {
 			// Ensure loading state is turned off in case of unexpected errors
 			this._view.webview.postMessage({ type: 'loading', state: false });

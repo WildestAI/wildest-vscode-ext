@@ -114,4 +114,26 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(messages.some(message => message.type === 'error'), false);
 		assert.match(warning, /Showing the last cached result/);
 	});
+
+	test('schedules another refresh when Git history times out', async () => {
+		CliService.execute = async () => {
+			executeCalls++;
+			throw new Error('Timeout waiting for Git');
+		};
+		const originalSetTimeout = global.setTimeout;
+		let scheduledDelay: number | undefined;
+		global.setTimeout = ((callback: () => void, delay?: number) => {
+			scheduledDelay = delay;
+			return {} as NodeJS.Timeout;
+		}) as typeof global.setTimeout;
+
+		try {
+			await provider.refresh(true);
+		} finally {
+			global.setTimeout = originalSetTimeout;
+		}
+
+		assert.strictEqual(executeCalls, 1);
+		assert.strictEqual(scheduledDelay, 2000);
+	});
 });

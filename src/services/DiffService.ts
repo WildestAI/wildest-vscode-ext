@@ -24,6 +24,26 @@ import { NotificationService } from './NotificationService';
 import { CliCommand } from '../utils/types';
 import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
 
+export type HtmlDiffTarget =
+	| { kind: 'working-tree'; staged: boolean }
+	| { kind: 'commit'; commitHash: string };
+
+/**
+ * Builds the legacy HTML request explicitly so the extension does not depend on
+ * the CLI's default output format while the JSON renderer migration is in progress.
+ */
+export function buildHtmlDiffArgs(outputPath: string, target: HtmlDiffTarget): string[] {
+	const args = ['diff'];
+	if (target.kind === 'commit') {
+		args.push(`${target.commitHash}~1..${target.commitHash}`);
+	}
+	args.push('--format', 'html', '--output', outputPath, '--no-open');
+	if (target.kind === 'working-tree' && target.staged) {
+		args.push('--staged');
+	}
+	return args;
+}
+
 export class DiffService {
 	private _outputChannel: vscode.OutputChannel;
 	private _notificationService: NotificationService;
@@ -159,8 +179,8 @@ export class DiffService {
 				// Build temp file path
 				const htmlFilePath = this.buildTempFilePath(repoRoot, `commit-${commitHash}`);
 
-				// Call CLI via CliService with commit range
-				const args = ['diff', `${commitHash}~1..${commitHash}`, '--output', htmlFilePath, '--no-open'];
+				// Call CLI via CliService with an explicit legacy HTML request and commit range
+				const args = buildHtmlDiffArgs(htmlFilePath, { kind: 'commit', commitHash });
 				const cliCommand = CliService.setupCommand(args, context);
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
 
@@ -206,11 +226,11 @@ export class DiffService {
 				// Build temp file path
 				const htmlFilePath = this.buildTempFilePath(repoRoot, stage);
 
-				// Call CLI via CliService
-				const args: string[] = ['diff', '--output', htmlFilePath, '--no-open'];
-				if (stage === 'staged') {
-					args.push('--staged');
-				}
+				// Call CLI via CliService with an explicit legacy HTML request
+				const args = buildHtmlDiffArgs(htmlFilePath, {
+					kind: 'working-tree',
+					staged: stage === 'staged'
+				});
 				const cliCommand = CliService.setupCommand(args, context);
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
 

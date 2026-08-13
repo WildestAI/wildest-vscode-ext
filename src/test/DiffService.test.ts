@@ -15,9 +15,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import * as os from 'os';
-import * as path from 'path';
-import { DiffService } from '../services/DiffService';
+import { buildHtmlDiffArgs, DiffService } from '../services/DiffService';
 import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
 
 suite('DiffService Test Suite', () => {
@@ -42,5 +40,32 @@ suite('DiffService Test Suite', () => {
 		
 		const diffService = new DiffService(mockContext, mockProvider);
 		assert.ok(diffService);
+	});
+
+	test('working tree requests explicitly select HTML output', () => {
+		assert.deepStrictEqual(
+			buildHtmlDiffArgs('/tmp/unstaged.html', { kind: 'working-tree', staged: false }),
+			['diff', '--format', 'html', '--output', '/tmp/unstaged.html', '--no-open']
+		);
+		assert.deepStrictEqual(
+			buildHtmlDiffArgs('/tmp/staged.html', { kind: 'working-tree', staged: true }),
+			['diff', '--format', 'html', '--output', '/tmp/staged.html', '--no-open', '--staged']
+		);
+	});
+
+	test('commit requests explicitly select HTML output without changing the range', () => {
+		const commitHash = 'a'.repeat(40);
+		assert.deepStrictEqual(
+			buildHtmlDiffArgs('/tmp/commit.html', { kind: 'commit', commitHash }),
+			[
+				'diff',
+				`${commitHash}~1..${commitHash}`,
+				'--format',
+				'html',
+				'--output',
+				'/tmp/commit.html',
+				'--no-open'
+			]
+		);
 	});
 });

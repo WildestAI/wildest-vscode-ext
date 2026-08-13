@@ -26,6 +26,20 @@ WildestAI is a Visual Studio Code extension that enhances your development workf
 
 Run **Wildest AI: Show Runtime Diagnostics** from the Command Palette to see the extension version, selected CLI source and path, platform, and actionable readiness status. The report contains no API keys or provider credentials.
 
+### DiffGraph artifact compatibility
+
+The extension contract tests vendor the CLI's complete local-only DiffGraph v2 example at
+`src/test/fixtures/diffgraph-v2.structural.example.json`. Its canonical source is
+`DiffGraph-CLI/diffgraph/schema/diffgraph-v2.structural.example.json` (SHA-256
+`580a35c321ed7ae7be8ce6605f6aafb21f00a512b028d1f91495e83f566f35fd`). Re-copy the
+fixture byte-for-byte when the CLI contract changes and update the hash only after reviewing that
+upstream change.
+
+Consumers require `schema_version` in `MAJOR.MINOR` form, reject unknown majors, and accept
+additive major-2 minor versions only when the complete artifact still satisfies the extension's
+v2 contract. This compatibility parser does not replace or migrate the current HTML webview
+renderer.
+
 
 ## Sidebar Explorer
 

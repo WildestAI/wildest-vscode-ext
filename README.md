@@ -24,7 +24,7 @@ WildestAI is a Visual Studio Code extension that enhances your development workf
 - Production runtime selection uses only a CLI artifact bundled with the extension. It recognizes package targets for macOS x64/ARM64, Linux x64/ARM64, and Windows x64; other targets are rejected rather than running an incompatible binary. Diagnostics report a missing runtime when the selected release does not contain that artifact. Clean-install packaging and smoke-test coverage remain tracked in [issue #19](https://github.com/WildestAI/wildest-vscode-ext/issues/19).
 - Development mode uses a Python virtual environment only when `WILDEST_DEV_MODE=1` or `NODE_ENV=development`. Set `WILDEST_VENV_PATH` when the environment is not at the default development path.
 
-Run **Wildest AI: Show Runtime Diagnostics** from the Command Palette to see the extension version, selected CLI source and path, platform, and actionable readiness status. The report contains no API keys or provider credentials.
+Run **Wildest AI: Show Runtime Diagnostics** from the Command Palette to see the extension version, selected CLI source and path, platform, CLI version, and actionable readiness status. The command uses bounded `wild --version` and `wild diff --help` probes to report whether deterministic DiffGraph JSON output is available for the extension's schema-v2 consumer; it does not analyze a repository or contact an AI provider. Probe errors are redacted, and the report contains no API keys or provider credentials.
 
 ### DiffGraph artifact compatibility
 

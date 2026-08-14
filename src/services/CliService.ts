@@ -6,6 +6,7 @@ import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 
 export type CliRuntimeStatus = 'ready' | 'missing' | 'unsupported';
+export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable';
 
 export interface CliRuntimeDiagnostics {
 	source: 'development environment' | 'packaged binary';
@@ -16,6 +17,19 @@ export interface CliRuntimeDiagnostics {
 	detail: string;
 }
 
+export interface CliRuntimeProbe {
+	status: CliCompatibilityStatus;
+	cliVersion: string;
+	schemaSupport: string;
+	detail: string;
+}
+
+export type CliProbeExecutor = (
+	executable: string,
+	args: string[],
+	timeoutMs: number,
+) => Promise<{ stdout: string; stderr: string }>;
+
 export interface RuntimeEnvironment {
 	platform: NodeJS.Platform;
 	architecture: string;
@@ -25,6 +39,8 @@ export interface RuntimeEnvironment {
 }
 
 export class CliService {
+	private static readonly supportedSchemaMajor = 2;
+
 	public static inspectRuntime(
 		context: vscode.ExtensionContext,
 		runtime: RuntimeEnvironment = this.getRuntimeEnvironment()
@@ -85,6 +101,49 @@ export class CliService {
 			return this.getDevCommand(args, env, context, runtime);
 		} else {
 			return this.getProdCommand(args, env, context, runtime);
+		}
+	}
+
+	public static async probeRuntime(
+		context: vscode.ExtensionContext,
+		runtime: RuntimeEnvironment = this.getRuntimeEnvironment(),
+		executeProbe: CliProbeExecutor = this.executeProbe,
+	): Promise<CliRuntimeProbe> {
+		const diagnostics = this.inspectRuntime(context, runtime);
+		if (diagnostics.status !== 'ready' || !diagnostics.executable) {
+			return {
+				status: 'unavailable',
+				cliVersion: 'not available',
+				schemaSupport: 'not checked',
+				detail: diagnostics.detail,
+			};
+		}
+
+		try {
+			const versionResult = await executeProbe(diagnostics.executable, ['--version'], 5000);
+			const versionOutput = `${versionResult.stdout}\n${versionResult.stderr}`;
+			const version = versionOutput.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/)?.[0] || 'unknown';
+			const helpResult = await executeProbe(diagnostics.executable, ['diff', '--help'], 5000);
+			const help = `${helpResult.stdout}\n${helpResult.stderr}`;
+			const hasJsonArtifact = /--format\b/.test(help) && /\bjson\b/i.test(help);
+
+			return {
+				status: hasJsonArtifact ? 'compatible' : 'incompatible',
+				cliVersion: version,
+				schemaSupport: hasJsonArtifact
+					? `DiffGraph JSON output available; extension accepts schema major ${this.supportedSchemaMajor}`
+					: 'DiffGraph JSON output was not advertised by wild diff --help',
+				detail: hasJsonArtifact
+					? 'The CLI advertises the deterministic JSON artifact required for schema compatibility checks.'
+					: 'Install a CLI version that supports wild diff --format json.',
+			};
+		} catch {
+			return {
+				status: 'unavailable',
+				cliVersion: 'unknown',
+				schemaSupport: 'not checked',
+				detail: 'The CLI health probe failed or timed out. Run the selected executable with --version and diff --help.',
+			};
 		}
 	}
 
@@ -200,6 +259,17 @@ export class CliService {
 			accessSync: fs.accessSync,
 		};
 	}
+
+	private static executeProbe: CliProbeExecutor = (executable, args, timeoutMs) =>
+		new Promise((resolve, reject) => {
+			cp.execFile(executable, args, { timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+				if (error) {
+					reject(error);
+					return;
+				}
+				resolve({ stdout, stderr });
+			});
+		});
 
 	private static getProdCommand(
 		args: string[] = [],

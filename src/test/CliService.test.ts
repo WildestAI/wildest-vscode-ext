@@ -112,4 +112,67 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(CliService.inspectRuntime(context, runtime).executable, executable);
 		assert.strictEqual(CliService.setupCommand([], context, runtime).executable, executable);
 	});
+	test('probes CLI version and deterministic JSON schema capability', async () => {
+		const executable = path.join(context.extensionPath, 'bin', 'wild-linux-x64');
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
+			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
+			accessSync: () => undefined,
+		};
+		const calls: string[][] = [];
+		const probe = await CliService.probeRuntime(context, runtime, async (_executable, args, timeoutMs) => {
+			calls.push(args);
+			assert.strictEqual(timeoutMs, 5000);
+			return args[0] === '--version'
+				? { stdout: 'wild, version 1.1.0\n', stderr: '' }
+				: { stdout: 'Options:\n  --format [html|terminal|json]\n', stderr: '' };
+		});
+
+		assert.deepStrictEqual(calls, [['--version'], ['diff', '--help']]);
+		assert.strictEqual(probe.status, 'compatible');
+		assert.strictEqual(probe.cliVersion, '1.1.0');
+		assert.match(probe.schemaSupport, /schema major 2/);
+	});
+
+	test('reports an incompatible CLI without JSON artifact output', async () => {
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => undefined,
+		};
+		const probe = await CliService.probeRuntime(context, runtime, async (_executable, args) => args[0] === '--version'
+			? { stdout: 'wild, version 1.0.0', stderr: '' }
+			: { stdout: 'Options:\n  --output PATH', stderr: '' });
+
+		assert.strictEqual(probe.status, 'incompatible');
+		assert.match(probe.detail, /--format json/);
+	});
+
+	test('does not execute a probe when the runtime is missing', async () => {
+		let executed = false;
+		const probe = await CliService.probeRuntime(context, {
+			platform: 'darwin', architecture: 'arm64', env: {},
+			existsSync: () => false,
+			accessSync: () => undefined,
+		}, async () => {
+			executed = true;
+			return { stdout: '', stderr: '' };
+		});
+
+		assert.strictEqual(executed, false);
+		assert.strictEqual(probe.status, 'unavailable');
+		assert.strictEqual(probe.cliVersion, 'not available');
+	});
+
+	test('redacts CLI probe failures', async () => {
+		const probe = await CliService.probeRuntime(context, {
+			platform: 'linux', architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => undefined,
+		}, async () => { throw new Error('secret path and token'); });
+
+		assert.strictEqual(probe.status, 'unavailable');
+		assert.doesNotMatch(probe.detail, /secret|token/);
+	});
+
 });

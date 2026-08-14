@@ -199,4 +199,26 @@ suite('CliService runtime diagnostics', () => {
 		assert.doesNotMatch(probe.detail, /secret|token/);
 	});
 
+	test('classifies and redacts probe workspace cleanup failures', async () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => undefined,
+		});
+		const probe = await CliService.probeRuntime(
+			diagnostics,
+			async (_executable, args) => args[0] === '--version'
+				? { stdout: 'wild, version 1.0.0', stderr: '' }
+				: { stdout: '{"schema_version":"2.0"}', stderr: '' },
+			async () => ({
+				cwd: '/secret/fixture/path',
+				dispose: () => { throw new Error('locked secret fixture'); },
+			}),
+		);
+
+		assert.strictEqual(probe.status, 'unavailable');
+		assert.strictEqual(probe.cliVersion, 'unknown');
+		assert.doesNotMatch(probe.detail, /secret|fixture|locked/);
+	});
+
 });

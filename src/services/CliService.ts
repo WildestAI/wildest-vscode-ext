@@ -127,6 +127,7 @@ export class CliService {
 		}
 
 		let workspace: CliProbeWorkspace | undefined;
+		let result: CliRuntimeProbe;
 		try {
 			const versionResult = await executeProbe(diagnostics.executable, ['--version'], 5000);
 			const versionOutput = `${versionResult.stdout}\n${versionResult.stderr}`;
@@ -145,7 +146,7 @@ export class CliService {
 			const schemaMajor = schemaVersion ? Number(schemaVersion[1]) : undefined;
 			const compatible = schemaMajor === this.supportedSchemaMajor;
 
-			return {
+			result = {
 				status: compatible ? 'compatible' : 'incompatible',
 				cliVersion: version,
 				schemaSupport: compatible
@@ -158,15 +159,25 @@ export class CliService {
 					: 'Install a CLI version that produces wild diff --format json with a compatible schema major.',
 			};
 		} catch {
+			result = {
+				status: 'unavailable',
+				cliVersion: 'unknown',
+				schemaSupport: 'not checked',
+				detail: 'The CLI health probe failed or timed out. Run the selected executable with --version and test wild diff --format json in a Git repository.',
+			};
+		}
+
+		try {
+			workspace?.dispose();
+		} catch {
 			return {
 				status: 'unavailable',
 				cliVersion: 'unknown',
 				schemaSupport: 'not checked',
 				detail: 'The CLI health probe failed or timed out. Run the selected executable with --version and test wild diff --format json in a Git repository.',
 			};
-		} finally {
-			workspace?.dispose();
 		}
+		return result;
 	}
 
 	public static async execute(

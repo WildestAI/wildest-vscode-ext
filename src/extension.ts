@@ -73,7 +73,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(runtimeDiagnosticsOutput);
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', async () => {
 		const diagnostics = CliService.inspectRuntime(context);
-		const probe = await CliService.probeRuntime(context);
+		const probe = await CliService.probeRuntime(diagnostics);
 		const extensionVersion = context.extension.packageJSON.version || 'unknown';
 		runtimeDiagnosticsOutput.clear();
 		runtimeDiagnosticsOutput.appendLine('WildestAI runtime diagnostics');
@@ -83,7 +83,7 @@ export function activate(context: vscode.ExtensionContext) {
 		runtimeDiagnosticsOutput.appendLine(`Platform: ${diagnostics.platform}/${diagnostics.architecture}`);
 		runtimeDiagnosticsOutput.appendLine(`CLI path: ${diagnostics.executable || 'not available'}`);
 		runtimeDiagnosticsOutput.appendLine(`CLI version: ${probe.cliVersion}`);
-		runtimeDiagnosticsOutput.appendLine(`Schema compatibility: ${probe.status}`);
+		runtimeDiagnosticsOutput.appendLine(`Artifact compatibility: ${probe.status}`);
 		runtimeDiagnosticsOutput.appendLine(`Schema support: ${probe.schemaSupport}`);
 		runtimeDiagnosticsOutput.appendLine(`Details: ${diagnostics.detail}`);
 		runtimeDiagnosticsOutput.appendLine(`Probe details: ${probe.detail}`);

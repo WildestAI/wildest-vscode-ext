@@ -6,6 +6,7 @@ import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 
 export type CliRuntimeStatus = 'ready' | 'missing' | 'unsupported';
+export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable';
 
 export interface CliRuntimeDiagnostics {
 	source: 'development environment' | 'packaged binary';
@@ -16,6 +17,27 @@ export interface CliRuntimeDiagnostics {
 	detail: string;
 }
 
+export interface CliRuntimeProbe {
+	status: CliCompatibilityStatus;
+	cliVersion: string;
+	schemaSupport: string;
+	detail: string;
+}
+
+export type CliProbeExecutor = (
+	executable: string,
+	args: string[],
+	timeoutMs: number,
+	cwd?: string,
+) => Promise<{ stdout: string; stderr: string }>;
+
+export interface CliProbeWorkspace {
+	cwd: string;
+	dispose: () => void;
+}
+
+export type CliProbeWorkspaceFactory = () => Promise<CliProbeWorkspace>;
+
 export interface RuntimeEnvironment {
 	platform: NodeJS.Platform;
 	architecture: string;
@@ -25,6 +47,8 @@ export interface RuntimeEnvironment {
 }
 
 export class CliService {
+	private static readonly supportedSchemaMajor = 2;
+
 	public static inspectRuntime(
 		context: vscode.ExtensionContext,
 		runtime: RuntimeEnvironment = this.getRuntimeEnvironment()
@@ -86,6 +110,74 @@ export class CliService {
 		} else {
 			return this.getProdCommand(args, env, context, runtime);
 		}
+	}
+
+	public static async probeRuntime(
+		diagnostics: CliRuntimeDiagnostics,
+		executeProbe: CliProbeExecutor = this.executeProbe,
+		createWorkspace: CliProbeWorkspaceFactory = this.createProbeWorkspace,
+	): Promise<CliRuntimeProbe> {
+		if (diagnostics.status !== 'ready' || !diagnostics.executable) {
+			return {
+				status: 'unavailable',
+				cliVersion: 'not available',
+				schemaSupport: 'not checked',
+				detail: diagnostics.detail,
+			};
+		}
+
+		let workspace: CliProbeWorkspace | undefined;
+		let result: CliRuntimeProbe;
+		try {
+			const versionResult = await executeProbe(diagnostics.executable, ['--version'], 5000);
+			const versionOutput = `${versionResult.stdout}\n${versionResult.stderr}`;
+			const version = versionOutput.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/)?.[0] || 'unknown';
+			workspace = await createWorkspace();
+			const artifactResult = await executeProbe(
+				diagnostics.executable,
+				['diff', '--format', 'json'],
+				5000,
+				workspace.cwd,
+			);
+			const artifact = JSON.parse(artifactResult.stdout) as { schema_version?: unknown };
+			const schemaVersion = typeof artifact.schema_version === 'string'
+				? artifact.schema_version.match(/^(\d+)\.\d+$/)
+				: undefined;
+			const schemaMajor = schemaVersion ? Number(schemaVersion[1]) : undefined;
+			const compatible = schemaMajor === this.supportedSchemaMajor;
+
+			result = {
+				status: compatible ? 'compatible' : 'incompatible',
+				cliVersion: version,
+				schemaSupport: compatible
+					? `Validated deterministic DiffGraph JSON schema major ${schemaMajor}`
+					: schemaMajor === undefined
+						? 'The CLI did not return a versioned DiffGraph JSON artifact'
+						: `CLI returned DiffGraph schema major ${schemaMajor}; extension requires ${this.supportedSchemaMajor}`,
+				detail: compatible
+					? 'The CLI produced a valid, compatible artifact from an isolated synthetic Git fixture.'
+					: 'Install a CLI version that produces wild diff --format json with a compatible schema major.',
+			};
+		} catch {
+			result = {
+				status: 'unavailable',
+				cliVersion: 'unknown',
+				schemaSupport: 'not checked',
+				detail: 'The CLI health probe failed or timed out. Run the selected executable with --version and test wild diff --format json in a Git repository.',
+			};
+		}
+
+		try {
+			workspace?.dispose();
+		} catch {
+			return {
+				status: 'unavailable',
+				cliVersion: 'unknown',
+				schemaSupport: 'not checked',
+				detail: 'The CLI health probe failed or timed out. Run the selected executable with --version and test wild diff --format json in a Git repository.',
+			};
+		}
+		return result;
 	}
 
 	public static async execute(
@@ -200,6 +292,35 @@ export class CliService {
 			accessSync: fs.accessSync,
 		};
 	}
+
+	private static executeProbe: CliProbeExecutor = (executable, args, timeoutMs, cwd) =>
+		new Promise((resolve, reject) => {
+			cp.execFile(executable, args, { cwd, timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+				if (error) {
+					reject(error);
+					return;
+				}
+				resolve({ stdout, stderr });
+			});
+		});
+
+	private static createProbeWorkspace: CliProbeWorkspaceFactory = async () => {
+		const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'wildestai-runtime-probe-'));
+		try {
+			await CliService.executeProbe('git', ['init', '--quiet'], 5000, cwd);
+			const fixture = path.join(cwd, 'probe.txt');
+			await fs.promises.writeFile(fixture, 'before\n', 'utf8');
+			await CliService.executeProbe('git', ['add', 'probe.txt'], 5000, cwd);
+			await fs.promises.writeFile(fixture, 'after\n', 'utf8');
+			return {
+				cwd,
+				dispose: () => fs.rmSync(cwd, { recursive: true, force: true }),
+			};
+		} catch (error) {
+			fs.rmSync(cwd, { recursive: true, force: true });
+			throw error;
+		}
+	};
 
 	private static getProdCommand(
 		args: string[] = [],

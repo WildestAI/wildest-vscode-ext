@@ -112,4 +112,113 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(CliService.inspectRuntime(context, runtime).executable, executable);
 		assert.strictEqual(CliService.setupCommand([], context, runtime).executable, executable);
 	});
+	test('probes CLI version and deterministic JSON schema capability', async () => {
+		const executable = path.join(context.extensionPath, 'bin', 'wild-linux-x64');
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
+			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
+			accessSync: () => undefined,
+		};
+		const calls: Array<{ args: string[]; cwd?: string }> = [];
+		let disposed = false;
+		const probe = await CliService.probeRuntime(
+			CliService.inspectRuntime(context, runtime),
+			async (_executable, args, timeoutMs, cwd) => {
+				calls.push({ args, cwd });
+				assert.strictEqual(timeoutMs, 5000);
+				return args[0] === '--version'
+					? { stdout: 'wild, version 1.1.0\n', stderr: '' }
+					: { stdout: '{"schema_version":"2.0"}', stderr: '' };
+			},
+			async () => ({ cwd: '/synthetic-repository', dispose: () => { disposed = true; } }),
+		);
+
+		assert.deepStrictEqual(calls, [
+			{ args: ['--version'], cwd: undefined },
+			{ args: ['diff', '--format', 'json'], cwd: '/synthetic-repository' },
+		]);
+		assert.strictEqual(disposed, true);
+		assert.strictEqual(probe.status, 'compatible');
+		assert.strictEqual(probe.cliVersion, '1.1.0');
+		assert.match(probe.schemaSupport, /schema major 2/);
+	});
+
+	for (const artifact of [
+		{ name: 'unrelated JSON output', output: '{"format":"json","help":"--format"}', expected: /versioned/ },
+		{ name: 'a mismatched schema major', output: '{"schema_version":"3.0"}', expected: /schema major 3/ },
+	]) {
+		test(`reports an incompatible CLI for ${artifact.name}`, async () => {
+			const runtime = {
+				platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
+				existsSync: () => true,
+				accessSync: () => undefined,
+			};
+			const probe = await CliService.probeRuntime(
+				CliService.inspectRuntime(context, runtime),
+				async (_executable, args) => args[0] === '--version'
+					? { stdout: 'wild, version 1.0.0', stderr: '' }
+					: { stdout: artifact.output, stderr: '' },
+				async () => ({ cwd: '/synthetic-repository', dispose: () => undefined }),
+			);
+
+			assert.strictEqual(probe.status, 'incompatible');
+			assert.match(probe.schemaSupport, artifact.expected);
+			assert.match(probe.detail, /--format json/);
+		});
+	}
+
+	test('does not execute a probe when the runtime is missing', async () => {
+		let executed = false;
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'darwin', architecture: 'arm64', env: {},
+			existsSync: () => false,
+			accessSync: () => undefined,
+		});
+		const probe = await CliService.probeRuntime(diagnostics, async () => {
+			executed = true;
+			return { stdout: '', stderr: '' };
+		});
+
+		assert.strictEqual(executed, false);
+		assert.strictEqual(probe.status, 'unavailable');
+		assert.strictEqual(probe.cliVersion, 'not available');
+	});
+
+	test('redacts CLI probe failures', async () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => undefined,
+		});
+		const probe = await CliService.probeRuntime(
+			diagnostics,
+			async () => { throw new Error('secret path and token'); },
+		);
+
+		assert.strictEqual(probe.status, 'unavailable');
+		assert.doesNotMatch(probe.detail, /secret|token/);
+	});
+
+	test('classifies and redacts probe workspace cleanup failures', async () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => undefined,
+		});
+		const probe = await CliService.probeRuntime(
+			diagnostics,
+			async (_executable, args) => args[0] === '--version'
+				? { stdout: 'wild, version 1.0.0', stderr: '' }
+				: { stdout: '{"schema_version":"2.0"}', stderr: '' },
+			async () => ({
+				cwd: '/secret/fixture/path',
+				dispose: () => { throw new Error('locked secret fixture'); },
+			}),
+		);
+
+		assert.strictEqual(probe.status, 'unavailable');
+		assert.strictEqual(probe.cliVersion, 'unknown');
+		assert.doesNotMatch(probe.detail, /secret|fixture|locked/);
+	});
+
 });

@@ -44,6 +44,7 @@ export interface RuntimeEnvironment {
 	env: NodeJS.ProcessEnv;
 	existsSync: (candidate: fs.PathLike) => boolean;
 	accessSync: (candidate: fs.PathLike, mode?: number) => void;
+	statSync: (candidate: fs.PathLike) => fs.Stats;
 	readFileHeader?: (candidate: fs.PathLike, length: number) => Buffer;
 }
 
@@ -297,13 +298,23 @@ export class CliService {
 		try {
 			if (runtime.platform === 'win32') {
 				runtime.accessSync(candidate, fs.constants.R_OK);
-				const contents = (runtime.readFileHeader ?? this.readFileHeader)(candidate, 2);
-				return contents.length === 2 && contents[0] === 0x4d && contents[1] === 0x5a
+				const readHeader = runtime.readFileHeader ?? this.readFileHeader;
+				const dosHeader = readHeader(candidate, 0x40);
+				if (dosHeader.length < 0x40 || dosHeader[0] !== 0x4d || dosHeader[1] !== 0x5a) {
+					return 'invalid';
+				}
+				const peOffset = dosHeader.readUInt32LE(0x3c);
+				if (peOffset < 0x40 || peOffset > 1024 * 1024 - 4) {
+					return 'invalid';
+				}
+				const peHeader = readHeader(candidate, peOffset + 4);
+				return peHeader.length >= peOffset + 4 &&
+					peHeader.subarray(peOffset, peOffset + 4).equals(Buffer.from('PE\0\0'))
 					? 'ready'
 					: 'invalid';
 			}
 			runtime.accessSync(candidate, fs.constants.X_OK);
-			return 'ready';
+			return runtime.statSync(candidate).isFile() ? 'ready' : 'invalid';
 		} catch (error) {
 			const code = (error as NodeJS.ErrnoException).code;
 			if (code === 'EACCES' || code === 'EPERM') {
@@ -334,6 +345,7 @@ export class CliService {
 			env: process.env,
 			existsSync: fs.existsSync,
 			accessSync: fs.accessSync,
+			statSync: fs.statSync,
 			readFileHeader: this.readFileHeader,
 		};
 	}

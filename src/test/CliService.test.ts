@@ -8,6 +8,16 @@ import * as vscode from 'vscode';
 import { CliService } from '../services/CliService';
 
 const fileError = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+const regularFileStats = { isFile: () => true } as fs.Stats;
+
+const validPeHeader = (length: number): Buffer => {
+	const header = Buffer.alloc(0x84);
+	header[0] = 0x4d;
+	header[1] = 0x5a;
+	header.writeUInt32LE(0x80, 0x3c);
+	header.write('PE\0\0', 0x80, 'binary');
+	return header.subarray(0, length);
+};
 
 suite('CliService runtime diagnostics', () => {
 	const context = {
@@ -20,6 +30,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'linux' as NodeJS.Platform, architecture: 'arm64', env: {},
 			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
 			accessSync: () => undefined,
+			statSync: () => regularFileStats,
 		};
 		const diagnostics = CliService.inspectRuntime(context, runtime);
 		const command = CliService.setupCommand(['--version'], context, runtime);
@@ -32,6 +43,7 @@ suite('CliService runtime diagnostics', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => false,
 			accessSync: () => { throw fileError('ENOENT'); },
+			statSync: () => regularFileStats,
 		});
 		assert.strictEqual(diagnostics.status, 'missing');
 		assert.match(diagnostics.detail, /Install a release that includes/);
@@ -42,6 +54,7 @@ suite('CliService runtime diagnostics', () => {
 		const runtime = {
 			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
 			accessSync: () => { throw fileError('EACCES'); },
+			statSync: () => regularFileStats,
 		};
 		const diagnostics = CliService.inspectRuntime(context, runtime);
 		assert.strictEqual(diagnostics.status, 'permission-denied');
@@ -57,6 +70,7 @@ suite('CliService runtime diagnostics', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'linux', architecture: 'x64', env: {}, existsSync: () => true,
 			accessSync: () => { throw fileError('EIO'); },
+			statSync: () => regularFileStats,
 		});
 
 		assert.strictEqual(diagnostics.status, 'invalid');
@@ -71,6 +85,7 @@ suite('CliService runtime diagnostics', () => {
 			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
 			existsSync: candidate => [venvPath, executable].includes(candidate.toString()),
 			accessSync: () => { throw fileError('EACCES'); },
+			statSync: () => regularFileStats,
 		});
 
 		assert.strictEqual(diagnostics.status, 'permission-denied');
@@ -84,6 +99,7 @@ suite('CliService runtime diagnostics', () => {
 			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
 			existsSync: () => false,
 			accessSync: () => { throw fileError('ENOENT'); },
+			statSync: () => regularFileStats,
 		});
 
 		assert.strictEqual(diagnostics.status, 'missing');
@@ -99,6 +115,7 @@ suite('CliService runtime diagnostics', () => {
 			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
 			existsSync: candidate => candidate.toString() === venvPath,
 			accessSync: () => { throw fileError('ENOENT'); },
+			statSync: () => regularFileStats,
 		});
 
 		assert.strictEqual(diagnostics.status, 'missing');
@@ -109,6 +126,7 @@ suite('CliService runtime diagnostics', () => {
 			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
 			existsSync: candidate => candidate.toString() === venvPath,
 			accessSync: () => { throw fileError('ENOENT'); },
+			statSync: () => regularFileStats,
 		}), /not found or invalid/);
 	});
 
@@ -118,6 +136,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'win32' as NodeJS.Platform, architecture: 'x64', env: {},
 			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
 			accessSync: () => undefined,
+			statSync: () => regularFileStats,
 			readFileHeader: () => Buffer.from('#!'),
 		};
 
@@ -127,10 +146,34 @@ suite('CliService runtime diagnostics', () => {
 		assert.throws(() => CliService.setupCommand([], context, runtime), /invalid/);
 	});
 
+	test('rejects an MZ-only Windows artifact', () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'win32', architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: () => Buffer.from('MZ'),
+		});
+
+		assert.strictEqual(diagnostics.status, 'invalid');
+		assert.match(diagnostics.detail, /not a launchable file/);
+	});
+
+	test('rejects an executable directory on POSIX', () => {
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => ({ isFile: () => false } as fs.Stats),
+		};
+
+		assert.strictEqual(CliService.inspectRuntime(context, runtime).status, 'invalid');
+		assert.throws(() => CliService.setupCommand([], context, runtime), /invalid/);
+	});
+
 	test('rejects unsupported architecture instead of selecting a wrong binary', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'win32', architecture: 'arm64', env: {}, existsSync: () => true,
 			accessSync: () => undefined,
+			statSync: () => regularFileStats,
 		});
 		assert.strictEqual(diagnostics.status, 'unsupported');
 		assert.strictEqual(diagnostics.executable, undefined);
@@ -145,6 +188,7 @@ suite('CliService runtime diagnostics', () => {
 			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
 			existsSync: candidate => [venvPath, executable].includes(candidate.toString()),
 			accessSync: () => undefined,
+			statSync: () => regularFileStats,
 		});
 		assert.strictEqual(diagnostics.source, 'development environment');
 		assert.strictEqual(diagnostics.status, 'ready');
@@ -164,7 +208,8 @@ suite('CliService runtime diagnostics', () => {
 				env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath, PATH: 'existing-path' },
 				existsSync: (candidate: fs.PathLike) => [venvPath, executable].includes(candidate.toString()),
 				accessSync: () => undefined,
-				readFileHeader: () => Buffer.from('MZ'),
+				statSync: () => regularFileStats,
+				readFileHeader: (_candidate: fs.PathLike, length: number) => validPeHeader(length),
 			};
 
 			const diagnostics = CliService.inspectRuntime(context, runtime);
@@ -186,6 +231,7 @@ suite('CliService runtime diagnostics', () => {
 			env: { WILDEST_DEV_MODE: '1' },
 			existsSync: (candidate: fs.PathLike) => [venvPath, executable].includes(candidate.toString()),
 			accessSync: () => undefined,
+			statSync: () => regularFileStats,
 		};
 
 		assert.strictEqual(CliService.inspectRuntime(context, runtime).executable, executable);
@@ -197,6 +243,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
 			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
 			accessSync: () => undefined,
+			statSync: () => regularFileStats,
 		};
 		const calls: Array<{ args: string[]; cwd?: string }> = [];
 		let disposed = false;
@@ -231,6 +278,7 @@ suite('CliService runtime diagnostics', () => {
 				platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
 				existsSync: () => true,
 				accessSync: () => undefined,
+				statSync: () => regularFileStats,
 			};
 			const probe = await CliService.probeRuntime(
 				CliService.inspectRuntime(context, runtime),
@@ -252,6 +300,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'darwin', architecture: 'arm64', env: {},
 			existsSync: () => false,
 			accessSync: () => { throw fileError('ENOENT'); },
+			statSync: () => regularFileStats,
 		});
 		const probe = await CliService.probeRuntime(diagnostics, async () => {
 			executed = true;
@@ -268,6 +317,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'linux', architecture: 'x64', env: {},
 			existsSync: () => true,
 			accessSync: () => undefined,
+			statSync: () => regularFileStats,
 		});
 		const probe = await CliService.probeRuntime(
 			diagnostics,
@@ -283,6 +333,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'linux', architecture: 'x64', env: {},
 			existsSync: () => true,
 			accessSync: () => undefined,
+			statSync: () => regularFileStats,
 		});
 		const probe = await CliService.probeRuntime(
 			diagnostics,

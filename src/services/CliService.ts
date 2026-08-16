@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 
-export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'unsupported';
+export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'invalid' | 'unsupported';
 export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable';
 
 export interface CliRuntimeDiagnostics {
@@ -44,6 +44,7 @@ export interface RuntimeEnvironment {
 	env: NodeJS.ProcessEnv;
 	existsSync: (candidate: fs.PathLike) => boolean;
 	accessSync: (candidate: fs.PathLike, mode?: number) => void;
+	readFileHeader?: (candidate: fs.PathLike, length: number) => Buffer;
 }
 
 export class CliService {
@@ -58,26 +59,31 @@ export class CliService {
 
 		if (isDevMode) {
 			const { venvPath, executable } = this.resolveDevRuntime(context, runtime);
-			const environmentExists = runtime.existsSync(venvPath);
-			const executableExists = runtime.existsSync(executable);
-			const ready = environmentExists && executableExists && this.isExecutable(executable, runtime);
-			const status: CliRuntimeStatus = ready
-				? 'ready'
-				: environmentExists && executableExists
-					? 'permission-denied'
-					: 'missing';
+			if (!runtime.existsSync(venvPath)) {
+				return {
+					source: 'development environment',
+					status: 'missing',
+					platform: runtime.platform,
+					architecture: runtime.architecture,
+					executable,
+					detail: `The configured virtual environment is missing at ${venvPath}. Set WILDEST_VENV_PATH to a valid environment.`,
+				};
+			}
 
+			const status = this.inspectLaunchability(executable, runtime);
 			return {
 				source: 'development environment',
 				status,
 				platform: runtime.platform,
 				architecture: runtime.architecture,
 				executable,
-				detail: ready
+				detail: status === 'ready'
 					? 'The configured development CLI is available.'
 					: status === 'permission-denied'
 						? 'The configured wild executable exists but cannot be executed. Restore execute permission for the file or recreate the virtual environment.'
-						: 'The configured virtual environment or wild executable is missing. Set WILDEST_VENV_PATH to a valid environment.',
+						: status === 'missing'
+							? `The configured wild executable is missing at ${executable}. Recreate the virtual environment.`
+							: 'The configured wild executable is not a launchable file or could not be validated. Recreate the virtual environment.',
 			};
 		}
 
@@ -92,24 +98,20 @@ export class CliService {
 			};
 		}
 
-		const exists = runtime.existsSync(executable);
-		const ready = exists && this.isExecutable(executable, runtime);
-		const status: CliRuntimeStatus = ready
-			? 'ready'
-			: exists
-				? 'permission-denied'
-				: 'missing';
+		const status = this.inspectLaunchability(executable, runtime);
 		return {
 			source: 'packaged binary',
 			status,
 			platform: runtime.platform,
 			architecture: runtime.architecture,
 			executable,
-			detail: ready
+			detail: status === 'ready'
 				? 'The packaged CLI is available.'
 				: status === 'permission-denied'
 					? `The packaged CLI ${binaryName} exists but cannot be executed. Reinstall the extension; on macOS/Linux, verify that the file has execute permission.`
-					: `The packaged CLI is missing. Install a release that includes ${binaryName} in the extension bin directory.`,
+					: status === 'missing'
+						? `The packaged CLI is missing. Install a release that includes ${binaryName} in the extension bin directory.`
+						: `The packaged CLI ${binaryName} is not a launchable file or could not be validated. Reinstall the extension.`,
 		};
 	}
 
@@ -261,7 +263,7 @@ export class CliService {
 		runtime: RuntimeEnvironment,
 	): CliCommand {
 		const { venvPath, binDir, executable } = this.resolveDevRuntime(context, runtime);
-		if (!runtime.existsSync(venvPath) || !this.isExecutable(executable, runtime)) {
+		if (!runtime.existsSync(venvPath) || this.inspectLaunchability(executable, runtime) !== 'ready') {
 			throw new Error(`Virtual environment not found or invalid at path: ${venvPath}. Please set WILDEST_VENV_PATH environment variable to point to a valid virtual environment.`);
 		}
 		const venvBin = path.join(venvPath, binDir);
@@ -288,15 +290,40 @@ export class CliService {
 		return { venvPath, binDir, executable };
 	}
 
-	private static isExecutable(candidate: fs.PathLike, runtime: RuntimeEnvironment): boolean {
-		if (!runtime.existsSync(candidate)) {
-			return false;
-		}
+	private static inspectLaunchability(
+		candidate: fs.PathLike,
+		runtime: RuntimeEnvironment,
+	): Exclude<CliRuntimeStatus, 'unsupported'> {
 		try {
+			if (runtime.platform === 'win32') {
+				runtime.accessSync(candidate, fs.constants.R_OK);
+				const contents = (runtime.readFileHeader ?? this.readFileHeader)(candidate, 2);
+				return contents.length === 2 && contents[0] === 0x4d && contents[1] === 0x5a
+					? 'ready'
+					: 'invalid';
+			}
 			runtime.accessSync(candidate, fs.constants.X_OK);
-			return true;
-		} catch {
-			return false;
+			return 'ready';
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === 'EACCES' || code === 'EPERM') {
+				return 'permission-denied';
+			}
+			if (code === 'ENOENT' || code === 'ENOTDIR') {
+				return 'missing';
+			}
+			return 'invalid';
+		}
+	}
+
+	private static readFileHeader(candidate: fs.PathLike, length: number): Buffer {
+		const descriptor = fs.openSync(candidate, 'r');
+		try {
+			const header = Buffer.alloc(length);
+			const bytesRead = fs.readSync(descriptor, header, 0, length, 0);
+			return header.subarray(0, bytesRead);
+		} finally {
+			fs.closeSync(descriptor);
 		}
 	}
 
@@ -307,6 +334,7 @@ export class CliService {
 			env: process.env,
 			existsSync: fs.existsSync,
 			accessSync: fs.accessSync,
+			readFileHeader: this.readFileHeader,
 		};
 	}
 
@@ -349,8 +377,8 @@ export class CliService {
 		if (!binaryName) {
 			throw new Error(`Unsupported platform: ${runtime.platform} ${runtime.architecture}`);
 		}
-		if (!this.isExecutable(executable, runtime)) {
-			throw new Error(`Binary not found or not executable: ${executable}`);
+		if (this.inspectLaunchability(executable, runtime) !== 'ready') {
+			throw new Error(`Binary not found, not executable, or invalid: ${executable}`);
 		}
 		return {
 			executable,

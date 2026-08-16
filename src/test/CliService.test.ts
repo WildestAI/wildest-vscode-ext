@@ -7,6 +7,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { CliService } from '../services/CliService';
 
+const fileError = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+
 suite('CliService runtime diagnostics', () => {
 	const context = {
 		extensionPath: path.join(path.parse(process.cwd()).root, 'extension'),
@@ -29,7 +31,7 @@ suite('CliService runtime diagnostics', () => {
 	test('reports a missing binary with release guidance', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => false,
-			accessSync: () => undefined,
+			accessSync: () => { throw fileError('ENOENT'); },
 		});
 		assert.strictEqual(diagnostics.status, 'missing');
 		assert.match(diagnostics.detail, /Install a release that includes/);
@@ -39,7 +41,7 @@ suite('CliService runtime diagnostics', () => {
 	test('rejects a present but non-executable packaged binary consistently', () => {
 		const runtime = {
 			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
-			accessSync: () => { throw new Error('EACCES'); },
+			accessSync: () => { throw fileError('EACCES'); },
 		};
 		const diagnostics = CliService.inspectRuntime(context, runtime);
 		assert.strictEqual(diagnostics.status, 'permission-denied');
@@ -51,6 +53,16 @@ suite('CliService runtime diagnostics', () => {
 		);
 	});
 
+	test('does not report an unexpected I/O failure as permission-denied', () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => { throw fileError('EIO'); },
+		});
+
+		assert.strictEqual(diagnostics.status, 'invalid');
+		assert.match(diagnostics.detail, /could not be validated/);
+	});
+
 	test('distinguishes a non-executable development CLI from a missing environment', () => {
 		const venvPath = path.join(path.parse(process.cwd()).root, 'venv');
 		const executable = path.join(venvPath, 'bin', 'wild');
@@ -58,11 +70,61 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'linux', architecture: 'x64',
 			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
 			existsSync: candidate => [venvPath, executable].includes(candidate.toString()),
-			accessSync: () => { throw new Error('EACCES'); },
+			accessSync: () => { throw fileError('EACCES'); },
 		});
 
 		assert.strictEqual(diagnostics.status, 'permission-denied');
 		assert.match(diagnostics.detail, /Restore execute permission/);
+	});
+
+	test('reports a missing development virtual environment', () => {
+		const venvPath = path.join(path.parse(process.cwd()).root, 'missing-venv');
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'x64',
+			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
+			existsSync: () => false,
+			accessSync: () => { throw fileError('ENOENT'); },
+		});
+
+		assert.strictEqual(diagnostics.status, 'missing');
+		assert.match(diagnostics.detail, /virtual environment is missing/);
+		assert.match(diagnostics.detail, new RegExp(venvPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+	});
+
+	test('reports a missing development executable', () => {
+		const venvPath = path.join(path.parse(process.cwd()).root, 'venv');
+		const executable = path.join(venvPath, 'bin', 'wild');
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'x64',
+			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
+			existsSync: candidate => candidate.toString() === venvPath,
+			accessSync: () => { throw fileError('ENOENT'); },
+		});
+
+		assert.strictEqual(diagnostics.status, 'missing');
+		assert.match(diagnostics.detail, /wild executable is missing/);
+		assert.match(diagnostics.detail, new RegExp(executable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+		assert.throws(() => CliService.setupCommand([], context, {
+			platform: 'linux', architecture: 'x64',
+			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
+			existsSync: candidate => candidate.toString() === venvPath,
+			accessSync: () => { throw fileError('ENOENT'); },
+		}), /not found or invalid/);
+	});
+
+	test('rejects an existing non-launchable Windows artifact consistently', () => {
+		const executable = path.join(context.extensionPath, 'bin', 'wild-win.exe');
+		const runtime = {
+			platform: 'win32' as NodeJS.Platform, architecture: 'x64', env: {},
+			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
+			accessSync: () => undefined,
+			readFileHeader: () => Buffer.from('#!'),
+		};
+
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'invalid');
+		assert.match(diagnostics.detail, /not a launchable file/);
+		assert.throws(() => CliService.setupCommand([], context, runtime), /invalid/);
 	});
 
 	test('rejects unsupported architecture instead of selecting a wrong binary', () => {
@@ -102,6 +164,7 @@ suite('CliService runtime diagnostics', () => {
 				env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath, PATH: 'existing-path' },
 				existsSync: (candidate: fs.PathLike) => [venvPath, executable].includes(candidate.toString()),
 				accessSync: () => undefined,
+				readFileHeader: () => Buffer.from('MZ'),
 			};
 
 			const diagnostics = CliService.inspectRuntime(context, runtime);
@@ -188,7 +251,7 @@ suite('CliService runtime diagnostics', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'darwin', architecture: 'arm64', env: {},
 			existsSync: () => false,
-			accessSync: () => undefined,
+			accessSync: () => { throw fileError('ENOENT'); },
 		});
 		const probe = await CliService.probeRuntime(diagnostics, async () => {
 			executed = true;

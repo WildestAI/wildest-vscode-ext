@@ -5,6 +5,7 @@ import { NotificationService } from '../services/NotificationService';
 
 export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
+	private _hasUsableGraph = false;
 	private _outputChannel: vscode.OutputChannel;
 	private _notificationService: NotificationService;
 
@@ -20,6 +21,7 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 		_token: vscode.CancellationToken,
 	) {
 		this._view = webviewView;
+		this._hasUsableGraph = false;
 		webviewView.webview.options = {
 			enableScripts: true,
 			localResourceRoots: [this._extensionUri]
@@ -63,12 +65,17 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 	 * Shows a loading screen while the diff graph is being generated
 	 */
 	public async showLoadingScreen() {
+		if (this._hasUsableGraph) {
+			this._outputChannel.appendLine('Keeping the previous DiffGraph visible while its replacement is generated.');
+			return;
+		}
 		const loadingHtmlPath = 'loading-screen.html';
 		const backupLoadingHtml = '<div style="padding: 20px; text-align: center; color: var(--vscode-foreground);">Loading DiffGraph...</div>';
 		await this.showStaticHtmlScreen(loadingHtmlPath, backupLoadingHtml, 'loading');
 	}
 
 	public async showNoChangesScreen() {
+		this._hasUsableGraph = false;
 		const noChangesHtmlPath = 'no-changes-screen.html';
 		const backupNoChangesHtml = '<div style="padding: 20px; text-align: center; color: var(--vscode-foreground);">No changes to display.</div>';
 		await this.showStaticHtmlScreen(noChangesHtmlPath, backupNoChangesHtml, 'no changes');
@@ -96,6 +103,7 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			this.update(htmlContent);
+			this._hasUsableGraph = Boolean(this._view);
 
 			// Reveal the view if it's not visible
 			if (this._view && !this._view.visible) {

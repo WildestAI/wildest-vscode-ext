@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 
-export type CliRuntimeStatus = 'ready' | 'missing' | 'unsupported';
+export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'unsupported';
 export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable';
 
 export interface CliRuntimeDiagnostics {
@@ -58,17 +58,26 @@ export class CliService {
 
 		if (isDevMode) {
 			const { venvPath, executable } = this.resolveDevRuntime(context, runtime);
-			const ready = runtime.existsSync(venvPath) && this.isExecutable(executable, runtime);
+			const environmentExists = runtime.existsSync(venvPath);
+			const executableExists = runtime.existsSync(executable);
+			const ready = environmentExists && executableExists && this.isExecutable(executable, runtime);
+			const status: CliRuntimeStatus = ready
+				? 'ready'
+				: environmentExists && executableExists
+					? 'permission-denied'
+					: 'missing';
 
 			return {
 				source: 'development environment',
-				status: ready ? 'ready' : 'missing',
+				status,
 				platform: runtime.platform,
 				architecture: runtime.architecture,
 				executable,
 				detail: ready
 					? 'The configured development CLI is available.'
-					: 'The configured virtual environment or wild executable is missing. Set WILDEST_VENV_PATH to a valid environment.',
+					: status === 'permission-denied'
+						? 'The configured wild executable exists but cannot be executed. Restore execute permission for the file or recreate the virtual environment.'
+						: 'The configured virtual environment or wild executable is missing. Set WILDEST_VENV_PATH to a valid environment.',
 			};
 		}
 
@@ -83,16 +92,24 @@ export class CliService {
 			};
 		}
 
-		const ready = this.isExecutable(executable, runtime);
+		const exists = runtime.existsSync(executable);
+		const ready = exists && this.isExecutable(executable, runtime);
+		const status: CliRuntimeStatus = ready
+			? 'ready'
+			: exists
+				? 'permission-denied'
+				: 'missing';
 		return {
 			source: 'packaged binary',
-			status: ready ? 'ready' : 'missing',
+			status,
 			platform: runtime.platform,
 			architecture: runtime.architecture,
 			executable,
 			detail: ready
 				? 'The packaged CLI is available.'
-				: `The packaged CLI is missing. Install a release that includes ${binaryName} in the extension bin directory.`,
+				: status === 'permission-denied'
+					? `The packaged CLI ${binaryName} exists but cannot be executed. Reinstall the extension; on macOS/Linux, verify that the file has execute permission.`
+					: `The packaged CLI is missing. Install a release that includes ${binaryName} in the extension bin directory.`,
 		};
 	}
 

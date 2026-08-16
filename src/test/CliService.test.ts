@@ -42,11 +42,27 @@ suite('CliService runtime diagnostics', () => {
 			accessSync: () => { throw new Error('EACCES'); },
 		};
 		const diagnostics = CliService.inspectRuntime(context, runtime);
-		assert.strictEqual(diagnostics.status, 'missing');
+		assert.strictEqual(diagnostics.status, 'permission-denied');
+		assert.match(diagnostics.detail, /exists but cannot be executed/);
+		assert.match(diagnostics.detail, /Reinstall/);
 		assert.throws(
 			() => CliService.setupCommand([], context, runtime),
 			/not executable/
 		);
+	});
+
+	test('distinguishes a non-executable development CLI from a missing environment', () => {
+		const venvPath = path.join(path.parse(process.cwd()).root, 'venv');
+		const executable = path.join(venvPath, 'bin', 'wild');
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'x64',
+			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
+			existsSync: candidate => [venvPath, executable].includes(candidate.toString()),
+			accessSync: () => { throw new Error('EACCES'); },
+		});
+
+		assert.strictEqual(diagnostics.status, 'permission-denied');
+		assert.match(diagnostics.detail, /Restore execute permission/);
 	});
 
 	test('rejects unsupported architecture instead of selecting a wrong binary', () => {

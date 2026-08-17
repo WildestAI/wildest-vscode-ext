@@ -99,12 +99,29 @@ suite('CliService runtime diagnostics', () => {
 			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
 			existsSync: () => false,
 			accessSync: () => { throw fileError('ENOENT'); },
-			statSync: () => regularFileStats,
+			statSync: () => { throw fileError('ENOENT'); },
 		});
 
 		assert.strictEqual(diagnostics.status, 'missing');
 		assert.match(diagnostics.detail, /virtual environment is missing/);
 		assert.match(diagnostics.detail, new RegExp(venvPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+	});
+
+	test('reports an inaccessible development virtual environment', () => {
+		const venvPath = path.join(path.parse(process.cwd()).root, 'inaccessible-venv');
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64',
+			env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
+			existsSync: () => false,
+			accessSync: () => undefined,
+			statSync: () => { throw fileError('EACCES'); },
+		};
+
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'permission-denied');
+		assert.match(diagnostics.detail, /virtual environment cannot be accessed/);
+		assert.match(diagnostics.detail, new RegExp(venvPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+		assert.throws(() => CliService.setupCommand([], context, runtime), /cannot be accessed/);
 	});
 
 	test('reports a missing development executable', () => {

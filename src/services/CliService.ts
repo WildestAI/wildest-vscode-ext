@@ -60,14 +60,19 @@ export class CliService {
 
 		if (isDevMode) {
 			const { venvPath, executable } = this.resolveDevRuntime(context, runtime);
-			if (!runtime.existsSync(venvPath)) {
+			const venvStatus = this.inspectPath(venvPath, runtime);
+			if (venvStatus !== 'ready') {
 				return {
 					source: 'development environment',
-					status: 'missing',
+					status: venvStatus,
 					platform: runtime.platform,
 					architecture: runtime.architecture,
 					executable,
-					detail: `The configured virtual environment is missing at ${venvPath}. Set WILDEST_VENV_PATH to a valid environment.`,
+					detail: venvStatus === 'permission-denied'
+						? `The configured virtual environment cannot be accessed at ${venvPath}. Restore directory permissions or set WILDEST_VENV_PATH to an accessible environment.`
+						: venvStatus === 'missing'
+							? `The configured virtual environment is missing at ${venvPath}. Set WILDEST_VENV_PATH to a valid environment.`
+							: `The configured virtual environment could not be validated at ${venvPath}. Set WILDEST_VENV_PATH to a valid environment.`,
 				};
 			}
 
@@ -264,7 +269,13 @@ export class CliService {
 		runtime: RuntimeEnvironment,
 	): CliCommand {
 		const { venvPath, binDir, executable } = this.resolveDevRuntime(context, runtime);
-		if (!runtime.existsSync(venvPath) || this.inspectLaunchability(executable, runtime) !== 'ready') {
+		const venvStatus = this.inspectPath(venvPath, runtime);
+		if (venvStatus !== 'ready') {
+			throw new Error(venvStatus === 'permission-denied'
+				? `Virtual environment cannot be accessed at path: ${venvPath}. Please restore directory permissions or set WILDEST_VENV_PATH to an accessible virtual environment.`
+				: `Virtual environment not found or invalid at path: ${venvPath}. Please set WILDEST_VENV_PATH environment variable to point to a valid virtual environment.`);
+		}
+		if (this.inspectLaunchability(executable, runtime) !== 'ready') {
 			throw new Error(`Virtual environment not found or invalid at path: ${venvPath}. Please set WILDEST_VENV_PATH environment variable to point to a valid virtual environment.`);
 		}
 		const venvBin = path.join(venvPath, binDir);
@@ -289,6 +300,25 @@ export class CliService {
 		const binDir = isWindows ? 'Scripts' : 'bin';
 		const executable = path.join(venvPath, binDir, isWindows ? 'wild.exe' : 'wild');
 		return { venvPath, binDir, executable };
+	}
+
+	private static inspectPath(
+		candidate: fs.PathLike,
+		runtime: RuntimeEnvironment,
+	): Exclude<CliRuntimeStatus, 'unsupported'> {
+		try {
+			runtime.statSync(candidate);
+			return 'ready';
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === 'EACCES' || code === 'EPERM') {
+				return 'permission-denied';
+			}
+			if (code === 'ENOENT' || code === 'ENOTDIR') {
+				return 'missing';
+			}
+			return 'invalid';
+		}
 	}
 
 	private static inspectLaunchability(

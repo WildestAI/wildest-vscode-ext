@@ -275,8 +275,13 @@ export class CliService {
 				? `Virtual environment cannot be accessed at path: ${venvPath}. Please restore directory permissions or set WILDEST_VENV_PATH to an accessible virtual environment.`
 				: `Virtual environment not found or invalid at path: ${venvPath}. Please set WILDEST_VENV_PATH environment variable to point to a valid virtual environment.`);
 		}
-		if (this.inspectLaunchability(executable, runtime) !== 'ready') {
-			throw new Error(`Virtual environment not found or invalid at path: ${venvPath}. Please set WILDEST_VENV_PATH environment variable to point to a valid virtual environment.`);
+		const executableStatus = this.inspectLaunchability(executable, runtime);
+		if (executableStatus !== 'ready') {
+			throw new Error(executableStatus === 'permission-denied'
+				? `Wild executable cannot be executed at path: ${executable}. Restore execute permission or recreate the virtual environment.`
+				: executableStatus === 'missing'
+					? `Wild executable is missing at path: ${executable}. Recreate the virtual environment.`
+					: `Wild executable is invalid at path: ${executable}. Recreate the virtual environment.`);
 		}
 		const venvBin = path.join(venvPath, binDir);
 		env = Object.assign({}, env, {
@@ -419,8 +424,13 @@ export class CliService {
 		if (!binaryName) {
 			throw new Error(`Unsupported platform: ${runtime.platform} ${runtime.architecture}`);
 		}
-		if (this.inspectLaunchability(executable, runtime) !== 'ready') {
-			throw new Error(`Binary not found, not executable, or invalid: ${executable}`);
+		const status = this.inspectLaunchability(executable, runtime);
+		if (status !== 'ready') {
+			throw new Error(status === 'permission-denied'
+				? `Packaged CLI is not executable: ${executable}. Reinstall the extension and verify execute permission.`
+				: status === 'missing'
+					? `Packaged CLI is missing: ${executable}. Reinstall the extension.`
+					: `Packaged CLI is invalid: ${executable}. Reinstall the extension.`);
 		}
 		return {
 			executable,

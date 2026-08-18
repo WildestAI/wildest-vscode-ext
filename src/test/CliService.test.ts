@@ -62,7 +62,29 @@ suite('CliService runtime diagnostics', () => {
 		assert.match(diagnostics.detail, /Reinstall/);
 		assert.throws(
 			() => CliService.setupCommand([], context, runtime),
-			/not executable/
+			/Packaged CLI is not executable.*Reinstall/
+		);
+	});
+
+	test('keeps missing and invalid packaged command failures actionable', () => {
+		const missingRuntime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => false,
+			accessSync: () => { throw fileError('ENOENT'); },
+			statSync: () => regularFileStats,
+		};
+		assert.throws(
+			() => CliService.setupCommand([], context, missingRuntime),
+			/Packaged CLI is missing.*Reinstall/
+		);
+
+		const invalidRuntime = {
+			...missingRuntime,
+			existsSync: () => true,
+			accessSync: () => { throw fileError('EIO'); },
+		};
+		assert.throws(
+			() => CliService.setupCommand([], context, invalidRuntime),
+			/Packaged CLI is invalid.*Reinstall/
 		);
 	});
 
@@ -90,6 +112,16 @@ suite('CliService runtime diagnostics', () => {
 
 		assert.strictEqual(diagnostics.status, 'permission-denied');
 		assert.match(diagnostics.detail, /Restore execute permission/);
+		assert.throws(
+			() => CliService.setupCommand([], context, {
+				platform: 'linux', architecture: 'x64',
+				env: { WILDEST_DEV_MODE: '1', WILDEST_VENV_PATH: venvPath },
+				existsSync: candidate => [venvPath, executable].includes(candidate.toString()),
+				accessSync: () => { throw fileError('EACCES'); },
+				statSync: () => regularFileStats,
+			}),
+			/Wild executable cannot be executed.*Restore execute permission/
+		);
 	});
 
 	test('reports a missing development virtual environment', () => {
@@ -144,7 +176,7 @@ suite('CliService runtime diagnostics', () => {
 			existsSync: candidate => candidate.toString() === venvPath,
 			accessSync: () => { throw fileError('ENOENT'); },
 			statSync: () => regularFileStats,
-		}), /not found or invalid/);
+		}), /Wild executable is missing.*Recreate/);
 	});
 
 	test('rejects an existing non-launchable Windows artifact consistently', () => {
@@ -160,7 +192,7 @@ suite('CliService runtime diagnostics', () => {
 		const diagnostics = CliService.inspectRuntime(context, runtime);
 		assert.strictEqual(diagnostics.status, 'invalid');
 		assert.match(diagnostics.detail, /not a launchable file/);
-		assert.throws(() => CliService.setupCommand([], context, runtime), /invalid/);
+		assert.throws(() => CliService.setupCommand([], context, runtime), /Packaged CLI is invalid.*Reinstall/);
 	});
 
 	test('rejects an MZ-only Windows artifact', () => {
@@ -183,7 +215,7 @@ suite('CliService runtime diagnostics', () => {
 		};
 
 		assert.strictEqual(CliService.inspectRuntime(context, runtime).status, 'invalid');
-		assert.throws(() => CliService.setupCommand([], context, runtime), /invalid/);
+		assert.throws(() => CliService.setupCommand([], context, runtime), /Packaged CLI is invalid.*Reinstall/);
 	});
 
 	test('rejects unsupported architecture instead of selecting a wrong binary', () => {

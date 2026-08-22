@@ -20,6 +20,7 @@ import { HistoryViewProvider } from './providers/HistoryViewProvider';
 import { DiffService } from './services/DiffService';
 import { GitService } from './services/GitService';
 import { CliService } from './services/CliService';
+import { AiProviderId, AiProviderProfile, AiProviderProfileService } from './services/AiProviderProfileService';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -69,6 +70,46 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 	context.subscriptions.push(helloDisposable);
 
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.configureAiProvider', async () => {
+		const providerPick = await vscode.window.showQuickPick([
+			{ label: 'disabled' as AiProviderId, description: 'Keep deterministic Git and DiffGraph workflows AI-free' },
+			{ label: 'openai' as AiProviderId, description: 'Direct OpenAI API for optional prose enrichment' },
+			{ label: 'anthropic' as AiProviderId, description: 'Direct Anthropic API for optional prose enrichment' },
+			{ label: 'openai-compatible' as AiProviderId, description: 'A compatible gateway or local model endpoint' },
+		], { placeHolder: 'Choose an optional AI prose provider' });
+		if (!providerPick) { return; }
+		const provider = providerPick.label;
+
+		let profile: AiProviderProfile;
+		try {
+			const current = AiProviderProfileService.getProfile();
+			const baseUrl = provider === 'openai-compatible'
+				? await vscode.window.showInputBox({ prompt: 'OpenAI-compatible base URL', value: current.provider === provider ? current.baseUrl : undefined, ignoreFocusOut: true })
+				: undefined;
+			if (provider === 'openai-compatible' && !baseUrl) { return; }
+			const model = provider === 'disabled' ? undefined : await vscode.window.showInputBox({
+				prompt: 'Model name', value: current.provider === provider ? current.model : undefined, ignoreFocusOut: true,
+			});
+			if (provider !== 'disabled' && !model) { return; }
+			profile = AiProviderProfileService.normalize({
+				provider, baseUrl, model, capabilities: provider === 'disabled' ? [] : ['prose'],
+				authSource: provider === 'disabled' ? 'none' : 'secret-storage',
+			});
+		} catch (error) {
+			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to configure the AI provider.');
+			return;
+		}
+
+		const apiKey = provider === 'disabled' ? undefined : await vscode.window.showInputBox({
+			prompt: `API key for ${provider} (stored only in VS Code SecretStorage)`, password: true, ignoreFocusOut: true,
+		});
+		if (provider !== 'disabled' && !apiKey) { return; }
+		await AiProviderProfileService.saveProfile(profile, context.secrets, apiKey);
+		void vscode.window.showInformationMessage(provider === 'disabled'
+			? 'WildestAI optional AI prose is disabled. Deterministic workflows remain available.'
+			: `WildestAI optional AI prose is configured for ${provider}.`);
+	}));
+
 	const runtimeDiagnosticsOutput = vscode.window.createOutputChannel('WildestAI Diagnostics');
 	context.subscriptions.push(runtimeDiagnosticsOutput);
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', async () => {
@@ -87,7 +128,17 @@ export function activate(context: vscode.ExtensionContext) {
 		runtimeDiagnosticsOutput.appendLine(`Schema support: ${probe.schemaSupport}`);
 		runtimeDiagnosticsOutput.appendLine(`Details: ${diagnostics.detail}`);
 		runtimeDiagnosticsOutput.appendLine(`Probe details: ${probe.detail}`);
-		runtimeDiagnosticsOutput.appendLine('Provider readiness: not yet configured by this extension');
+		try {
+			const providerProfile = AiProviderProfileService.getProfile();
+			const providerReadiness = await AiProviderProfileService.readiness(providerProfile, context.secrets);
+			runtimeDiagnosticsOutput.appendLine(`Provider: ${providerProfile.provider}`);
+			runtimeDiagnosticsOutput.appendLine(`Provider model: ${providerProfile.model || 'not applicable'}`);
+			runtimeDiagnosticsOutput.appendLine(`Provider readiness: ${providerReadiness.status}`);
+			runtimeDiagnosticsOutput.appendLine(`Provider details: ${providerReadiness.detail}`);
+		} catch (error) {
+			runtimeDiagnosticsOutput.appendLine(`Provider readiness: needs-configuration`);
+			runtimeDiagnosticsOutput.appendLine(`Provider details: ${error instanceof Error ? error.message : 'Invalid provider configuration.'}`);
+		}
 		runtimeDiagnosticsOutput.show(true);
 
 		if (diagnostics.status !== 'ready') {

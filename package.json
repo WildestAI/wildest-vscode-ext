@@ -97,6 +97,11 @@
         "command": "wildestai.showRuntimeDiagnostics",
         "title": "Wildest AI: Show Runtime Diagnostics",
         "category": "Wildest AI"
+      },
+      {
+        "command": "wildestai.configureAiProvider",
+        "title": "Wildest AI: Configure AI Provider",
+        "category": "Wildest AI"
       }
     ],
     "menus": {
@@ -124,6 +129,31 @@
           "group": "navigation"
         }
       ]
+    },
+    "configuration": {
+      "title": "Wildest AI",
+      "properties": {
+        "wildestai.ai.providerProfile": {
+          "type": "object",
+          "default": {
+            "provider": "disabled",
+            "capabilities": [],
+            "authSource": "none"
+          },
+          "description": "Optional AI prose provider profile. API keys are stored only in VS Code SecretStorage, never in settings.",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": ["disabled", "openai", "anthropic", "openai-compatible"]
+            },
+            "baseUrl": { "type": "string" },
+            "model": { "type": "string" },
+            "capabilities": { "type": "array", "items": { "type": "string" } },
+            "authSource": { "type": "string", "enum": ["none", "secret-storage"] }
+          }
+        }
+      }
     }
   },
   "scripts": {

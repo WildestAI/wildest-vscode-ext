@@ -71,7 +71,13 @@ export class AiProviderProfileService {
 			}
 			try {
 				const parsedBaseUrl = new URL(baseUrl);
-				if ((parsedBaseUrl.protocol !== 'http:' && parsedBaseUrl.protocol !== 'https:') || !parsedBaseUrl.hostname || parsedBaseUrl.hostname === '.') {
+				if (
+					(parsedBaseUrl.protocol !== 'http:' && parsedBaseUrl.protocol !== 'https:')
+					|| !parsedBaseUrl.hostname
+					|| parsedBaseUrl.hostname === '.'
+					|| parsedBaseUrl.username
+					|| parsedBaseUrl.password
+				) {
 					throw new Error('unsupported protocol or missing host');
 				}
 			} catch {

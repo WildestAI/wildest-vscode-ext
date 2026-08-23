@@ -24,7 +24,7 @@ suite('AiProviderProfileService', () => {
 		assert.throws(() => AiProviderProfileService.normalize({
 			provider: 'openai-compatible', model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',
 		}), /needs a baseUrl/);
-		for (const baseUrl of ['https://', 'https://.', 'ftp://localhost:11434/v1', 'not-a-url']) {
+		for (const baseUrl of ['https://', 'https://.', 'ftp://localhost:11434/v1', 'https://api-key@gateway.example.com/v1', 'https://user:password@gateway.example.com/v1', 'not-a-url']) {
 			assert.throws(() => AiProviderProfileService.normalize({
 				provider: 'openai-compatible', baseUrl, model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',
 			}), /baseUrl must be an http\(s\) URL/);

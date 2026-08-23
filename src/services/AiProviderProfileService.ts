@@ -65,8 +65,18 @@ export class AiProviderProfileService {
 		const model = candidate.model ?? base.model;
 		const capabilities = candidate.capabilities ?? base.capabilities;
 		const authSource = candidate.authSource ?? base.authSource;
-		if (baseUrl !== undefined && (typeof baseUrl !== 'string' || !/^https?:\/\//.test(baseUrl))) {
-			throw new Error('WildestAI AI provider baseUrl must be an http(s) URL.');
+		if (baseUrl !== undefined) {
+			if (typeof baseUrl !== 'string') {
+				throw new Error('WildestAI AI provider baseUrl must be an http(s) URL.');
+			}
+			try {
+				const parsedBaseUrl = new URL(baseUrl);
+				if ((parsedBaseUrl.protocol !== 'http:' && parsedBaseUrl.protocol !== 'https:') || !parsedBaseUrl.hostname || parsedBaseUrl.hostname === '.') {
+					throw new Error('unsupported protocol or missing host');
+				}
+			} catch {
+				throw new Error('WildestAI AI provider baseUrl must be an http(s) URL.');
+			}
 		}
 		if (model !== undefined && (typeof model !== 'string' || model.trim().length === 0)) {
 			throw new Error('WildestAI AI provider model must be a non-empty string.');
@@ -108,12 +118,19 @@ export class AiProviderProfileService {
 		return { status: 'ready', detail: `${profile.provider} is configured for optional prose enrichment. Keys are stored in VS Code SecretStorage.` };
 	}
 
-	public static async saveProfile(profile: AiProviderProfile, secrets: vscode.SecretStorage, apiKey?: string): Promise<void> {
+	public static async saveProfile(
+		profile: AiProviderProfile,
+		secrets: vscode.SecretStorage,
+		apiKey?: string,
+		configuration = vscode.workspace.getConfiguration('wildestai'),
+	): Promise<void> {
 		const normalized = this.normalize(profile);
-		const configuration = vscode.workspace.getConfiguration('wildestai');
-		await configuration.update(profileSetting, normalized, vscode.ConfigurationTarget.Global);
-		if (normalized.provider !== 'disabled' && apiKey !== undefined) {
+		if (normalized.provider !== 'disabled') {
+			if (typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+				throw new Error('An API key is required before enabling an AI provider.');
+			}
 			await secrets.store(this.secretKey(normalized.provider), apiKey);
 		}
+		await configuration.update(profileSetting, normalized, vscode.ConfigurationTarget.Global);
 	}
 }

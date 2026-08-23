@@ -104,7 +104,12 @@ export function activate(context: vscode.ExtensionContext) {
 			prompt: `API key for ${provider} (stored only in VS Code SecretStorage)`, password: true, ignoreFocusOut: true,
 		});
 		if (provider !== 'disabled' && !apiKey) { return; }
-		await AiProviderProfileService.saveProfile(profile, context.secrets, apiKey);
+		try {
+			await AiProviderProfileService.saveProfile(profile, context.secrets, apiKey);
+		} catch (error) {
+			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to save the AI provider configuration.');
+			return;
+		}
 		void vscode.window.showInformationMessage(provider === 'disabled'
 			? 'WildestAI optional AI prose is disabled. Deterministic workflows remain available.'
 			: `WildestAI optional AI prose is configured for ${provider}.`);

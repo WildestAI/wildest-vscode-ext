@@ -328,9 +328,14 @@ function diffRefAt(value: unknown, path: string): void {
 	optional(diffRef, 'repo_root', stringAt, path);
 }
 
+// Keep this in lockstep with DiffGraph-CLI's v2 warning enum. These resolver
+// failures are intentionally structured: the webview can show an actionable
+// state without treating a failed ref or merge-base lookup as an empty diff.
 const warningCodes = ['PARSE_FAILURE', 'UNSUPPORTED_LANGUAGE', 'PARTIAL_ANALYSIS', 'LLM_TIMEOUT', 'LLM_ERROR',
 	'UNKNOWN', 'not_a_git_repository', 'git_diff_failed', 'malformed_git_output', 'missing_object_id',
-	'unsupported_worktree_entry', 'worktree_read_failed', 'hash_object_failed', 'malformed_hash_object_output'] as const;
+	'unsupported_worktree_entry', 'worktree_read_failed', 'hash_object_failed', 'malformed_hash_object_output',
+	'unmerged_index_entry', 'invalid_base_ref', 'invalid_head_ref', 'merge_base_failed',
+	'malformed_merge_base'] as const;
 
 function metadataAt(value: unknown, path: string): void {
 	const metadata = objectAt(value, path);

@@ -62,6 +62,22 @@ suite('DiffGraph v2 contract', () => {
 		assert.strictEqual(validateDiffGraphArtifact(artifact).schema_version, '2.17');
 	});
 
+	for (const code of [
+		'unmerged_index_entry',
+		'invalid_base_ref',
+		'invalid_head_ref',
+		'merge_base_failed',
+		'malformed_merge_base',
+	]) {
+		test(`accepts the structured Git resolver warning ${code}`, () => {
+			const artifact = fixtureValue();
+			const metadata = artifact.metadata as Record<string, unknown>;
+			metadata.warnings = [{ code, detail: 'Git could not resolve this comparison.' }];
+
+			assert.strictEqual(validateDiffGraphArtifact(artifact).metadata.warnings?.[0]?.code, code);
+		});
+	}
+
 	test('rejects a v2 minor artifact that no longer satisfies the packaged shape', () => {
 		const artifact = fixtureValue();
 		artifact.schema_version = '2.17';

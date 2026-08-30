@@ -6,6 +6,22 @@ interface CacheEntry {
 	timestamp: number;
 }
 
+function cloneCommit(commit: GitCommit): GitCommit {
+	return {
+		...commit,
+		date: new Date(commit.date.getTime()),
+		parents: [...commit.parents],
+		refs: [...commit.refs],
+	};
+}
+
+function cloneEntry(entry: Pick<CacheEntry, 'commits' | 'graphLines'>): { commits: GitCommit[]; graphLines: string[] } {
+	return {
+		commits: entry.commits.map(cloneCommit),
+		graphLines: [...entry.graphLines],
+	};
+}
+
 export class GitHistoryCache {
 	private static cache: Map<string, CacheEntry> = new Map();
 	private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -20,16 +36,12 @@ export class GitHistoryCache {
 			return null;
 		}
 
-		return {
-			commits: [...entry.commits],
-			graphLines: [...entry.graphLines]
-		};
+		return cloneEntry(entry);
 	}
 
 	public static update(repoPath: string, commits: GitCommit[], graphLines: string[]): void {
 		this.cache.set(repoPath, {
-			commits: [...commits],
-			graphLines: [...graphLines],
+			...cloneEntry({ commits, graphLines }),
 			timestamp: Date.now()
 		});
 	}

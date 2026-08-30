@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
+import { DiffGraphContractError, validateDiffGraphArtifact } from '../utils/diffGraphV2';
 
 export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'invalid' | 'unsupported';
 export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable';
@@ -171,18 +172,34 @@ export class CliService {
 			const schemaMajor = schemaVersion ? Number(schemaVersion[1]) : undefined;
 			const compatible = schemaMajor === this.supportedSchemaMajor;
 
-			result = {
-				status: compatible ? 'compatible' : 'incompatible',
-				cliVersion: version,
-				schemaSupport: compatible
-					? `Validated deterministic DiffGraph JSON schema major ${schemaMajor}`
-					: schemaMajor === undefined
+			if (!compatible) {
+				result = {
+					status: 'incompatible',
+					cliVersion: version,
+					schemaSupport: schemaMajor === undefined
 						? 'The CLI did not return a versioned DiffGraph JSON artifact'
 						: `CLI returned DiffGraph schema major ${schemaMajor}; extension requires ${this.supportedSchemaMajor}`,
-				detail: compatible
-					? 'The CLI produced a valid, compatible artifact from an isolated synthetic Git fixture.'
-					: 'Install a CLI version that produces wild diff --format json with a compatible schema major.',
-			};
+					detail: 'Install a CLI version that produces wild diff --format json with a compatible schema major.',
+				};
+			} else {
+				try {
+					validateDiffGraphArtifact(artifact);
+					result = {
+						status: 'compatible',
+						cliVersion: version,
+						schemaSupport: `Validated deterministic DiffGraph JSON schema major ${schemaMajor}`,
+						detail: 'The CLI produced a valid, compatible artifact from an isolated synthetic Git fixture.',
+					};
+				} catch (error) {
+					if (!(error instanceof DiffGraphContractError)) { throw error; }
+					result = {
+						status: 'incompatible',
+						cliVersion: version,
+						schemaSupport: `CLI returned an invalid DiffGraph schema-v${this.supportedSchemaMajor} artifact`,
+						detail: 'Install a CLI version that produces a complete, compatible wild diff --format json artifact.',
+					};
+				}
+			}
 		} catch {
 			result = {
 				status: 'unavailable',

@@ -19,6 +19,17 @@ const validPeHeader = (length: number): Buffer => {
 	return header.subarray(0, length);
 };
 
+const compatibleProbeArtifact = JSON.stringify({
+	schema_version: '2.0',
+	generated_at: '2026-08-30T09:30:00Z',
+	wild_version: '1.1.0',
+	diff_ref: { kind: 'unstaged' },
+	files: [],
+	symbols: [],
+	relationships: [],
+	metadata: { privacy_tier: 'local' },
+});
+
 suite('CliService runtime diagnostics', () => {
 	const context = {
 		extensionPath: path.join(path.parse(process.cwd()).root, 'extension'),
@@ -303,7 +314,7 @@ suite('CliService runtime diagnostics', () => {
 				assert.strictEqual(timeoutMs, 5000);
 				return args[0] === '--version'
 					? { stdout: 'wild, version 1.1.0\n', stderr: '' }
-					: { stdout: '{"schema_version":"2.0"}', stderr: '' };
+					: { stdout: compatibleProbeArtifact, stderr: '' };
 			},
 			async () => ({ cwd: '/synthetic-repository', dispose: () => { disposed = true; } }),
 		);
@@ -316,6 +327,28 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(probe.status, 'compatible');
 		assert.strictEqual(probe.cliVersion, '1.1.0');
 		assert.match(probe.schemaSupport, /schema major 2/);
+	});
+
+	test('reports an incompatible CLI when its v2 artifact is incomplete', async () => {
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+		};
+		let disposed = false;
+		const probe = await CliService.probeRuntime(
+			CliService.inspectRuntime(context, runtime),
+			async (_executable, args) => args[0] === '--version'
+				? { stdout: 'wild, version 1.1.0', stderr: '' }
+				: { stdout: '{"schema_version":"2.0","metadata":{"privacy_tier":"local"}}', stderr: '' },
+			async () => ({ cwd: '/synthetic-repository', dispose: () => { disposed = true; } }),
+		);
+
+		assert.strictEqual(disposed, true);
+		assert.strictEqual(probe.status, 'incompatible');
+		assert.match(probe.schemaSupport, /invalid DiffGraph schema-v2 artifact/);
+		assert.match(probe.detail, /complete, compatible/);
 	});
 
 	for (const artifact of [
@@ -388,7 +421,7 @@ suite('CliService runtime diagnostics', () => {
 			diagnostics,
 			async (_executable, args) => args[0] === '--version'
 				? { stdout: 'wild, version 1.0.0', stderr: '' }
-				: { stdout: '{"schema_version":"2.0"}', stderr: '' },
+				: { stdout: compatibleProbeArtifact, stderr: '' },
 			async () => ({
 				cwd: '/secret/fixture/path',
 				dispose: () => { throw new Error('locked secret fixture'); },

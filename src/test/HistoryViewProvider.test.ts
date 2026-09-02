@@ -83,6 +83,21 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(messages.find(message => message.type === 'commits').commits[0].hash, commit.hash);
 	});
 
+	test('isolates warm cache entries from caller mutation', () => {
+		GitHistoryCache.update(repoRoot, [commit], ['* ']);
+		const firstRead = GitHistoryCache.getCached(repoRoot)!;
+		firstRead.commits[0].parents.push('mutated-parent');
+		firstRead.commits[0].refs.push('mutated-ref');
+		firstRead.commits[0].date.setUTCFullYear(1999);
+		firstRead.graphLines[0] = 'mutated graph line';
+
+		const secondRead = GitHistoryCache.getCached(repoRoot)!;
+		assert.deepStrictEqual(secondRead.commits[0].parents, []);
+		assert.deepStrictEqual(secondRead.commits[0].refs, ['HEAD']);
+		assert.strictEqual(secondRead.commits[0].date.toISOString(), commit.date.toISOString());
+		assert.deepStrictEqual(secondRead.graphLines, ['* ']);
+	});
+
 	test('refetches history when the cache is older than five minutes', async () => {
 		const originalDateNow = Date.now;
 		const cachedAt = originalDateNow();

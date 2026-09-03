@@ -12,11 +12,15 @@ export function redactDiagnostics(value: string): string {
 			'$1[REDACTED]:[REDACTED]@',
 		)
 		.replace(
-			/\b(authorization\s*:\s*)(?:Bearer\s+)?[^\s,"'}\]]+/gi,
+			/\b(authorization\s*:\s*)(?:Bearer\s+)?(?:"[^"]*"|'[^']*'|[^\s,"'}\]]+)/gi,
 			'$1[REDACTED]',
 		)
 		.replace(
-			/\b((?:api[_-]?key|token|secret|password)\s*[=:]\s*["']?)[^\s,"'}\]&]+/gi,
+			/(["'](?:api[_-]?key|token|secret|password)["']\s*:\s*)(?:"[^"]*"|'[^']*'|[^\s,"'}\]&]+)/gi,
+			'$1[REDACTED]',
+		)
+		.replace(
+			/\b((?:(?:[A-Z][A-Z0-9_]*_)?(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)|api[_-]?key|token|secret|password)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,"'}\]&]+)/gi,
 			'$1[REDACTED]',
 		)
 		.replace(

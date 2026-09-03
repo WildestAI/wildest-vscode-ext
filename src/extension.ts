@@ -148,7 +148,7 @@ export function activate(context: vscode.ExtensionContext) {
 		runtimeDiagnosticsOutput.show(true);
 
 		if (diagnostics.status !== 'ready') {
-			void vscode.window.showWarningMessage(`WildestAI CLI ${diagnostics.status}: ${diagnostics.detail}`);
+			void vscode.window.showWarningMessage(`WildestAI CLI ${diagnostics.status}: ${redactDiagnostics(diagnostics.detail)}`);
 		}
 	}));
 

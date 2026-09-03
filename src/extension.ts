@@ -21,6 +21,7 @@ import { DiffService } from './services/DiffService';
 import { GitService } from './services/GitService';
 import { CliService } from './services/CliService';
 import { AiProviderId, AiProviderProfile, AiProviderProfileService } from './services/AiProviderProfileService';
+import { redactDiagnostics } from './utils/redactDiagnostics';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -131,23 +132,23 @@ export function activate(context: vscode.ExtensionContext) {
 		runtimeDiagnosticsOutput.appendLine(`CLI version: ${probe.cliVersion}`);
 		runtimeDiagnosticsOutput.appendLine(`Artifact compatibility: ${probe.status}`);
 		runtimeDiagnosticsOutput.appendLine(`Schema support: ${probe.schemaSupport}`);
-		runtimeDiagnosticsOutput.appendLine(`Details: ${diagnostics.detail}`);
-		runtimeDiagnosticsOutput.appendLine(`Probe details: ${probe.detail}`);
+		runtimeDiagnosticsOutput.appendLine(`Details: ${redactDiagnostics(diagnostics.detail)}`);
+		runtimeDiagnosticsOutput.appendLine(`Probe details: ${redactDiagnostics(probe.detail)}`);
 		try {
 			const providerProfile = AiProviderProfileService.getProfile();
 			const providerReadiness = await AiProviderProfileService.readiness(providerProfile, context.secrets);
 			runtimeDiagnosticsOutput.appendLine(`Provider: ${providerProfile.provider}`);
 			runtimeDiagnosticsOutput.appendLine(`Provider model: ${providerProfile.model || 'not applicable'}`);
 			runtimeDiagnosticsOutput.appendLine(`Provider readiness: ${providerReadiness.status}`);
-			runtimeDiagnosticsOutput.appendLine(`Provider details: ${providerReadiness.detail}`);
+			runtimeDiagnosticsOutput.appendLine(`Provider details: ${redactDiagnostics(providerReadiness.detail)}`);
 		} catch (error) {
 			runtimeDiagnosticsOutput.appendLine(`Provider readiness: needs-configuration`);
-			runtimeDiagnosticsOutput.appendLine(`Provider details: ${error instanceof Error ? error.message : 'Invalid provider configuration.'}`);
+			runtimeDiagnosticsOutput.appendLine(`Provider details: ${redactDiagnostics(error instanceof Error ? error.message : 'Invalid provider configuration.')}`);
 		}
 		runtimeDiagnosticsOutput.show(true);
 
 		if (diagnostics.status !== 'ready') {
-			void vscode.window.showWarningMessage(`WildestAI CLI ${diagnostics.status}: ${diagnostics.detail}`);
+			void vscode.window.showWarningMessage(`WildestAI CLI ${diagnostics.status}: ${redactDiagnostics(diagnostics.detail)}`);
 		}
 	}));
 

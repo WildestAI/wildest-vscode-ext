@@ -1,0 +1,32 @@
+name: Release preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release*.yml'
+      - '.vscodeignore'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'release-inputs/**'
+      - 'scripts/release/**'
+
+permissions:
+  contents: read
+
+jobs:
+  package-contract:
+    name: Validate release input and VSIX contents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Validate the documented CLI release-input contract
+        run: npm run verify:release-input
+      - name: Build a clean-checkout VSIX with contract placeholders
+        run: npm run package:preflight

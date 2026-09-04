@@ -26,6 +26,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Test immutable CLI release-tag validation
+        run: npm run test:release-contract
       - name: Validate the documented CLI release-input contract
         run: npm run verify:release-input
       - name: Build a clean-checkout VSIX with contract placeholders

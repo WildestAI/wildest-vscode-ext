@@ -9,15 +9,12 @@ export const REQUIRED_ASSETS = [
 ];
 export const CONTRACT_PATH = 'release-inputs/diffgraph-cli.json';
 export const PENDING_RELEASE_TAG = 'PENDING_IMMUTABLE_CLI_RELEASE';
+export const IMMUTABLE_CLI_TAG_PATTERN = /^cli-v\d+\.\d+\.\d+-[0-9a-f]{12}$/i;
 
-export async function readContract() {
-  let contract;
-  try {
-    contract = JSON.parse(await readFile(CONTRACT_PATH, 'utf8'));
-  } catch (error) {
-    throw new Error(`Cannot read ${CONTRACT_PATH}: ${error.message}`);
-  }
-
+/**
+ * Enforces the fixed release-input shape and immutable CLI tag policy.
+ */
+export function validateContract(contract) {
   if (contract.repository !== 'WildestAI/DiffGraph-CLI') {
     throw new Error('release input must identify WildestAI/DiffGraph-CLI');
   }
@@ -28,8 +25,19 @@ export async function readContract() {
   if (contract.checksumAsset !== 'SHA256SUMS' || contract.manifestAsset !== 'cli-manifest.json') {
     throw new Error('release input must require SHA256SUMS and cli-manifest.json');
   }
-  if (typeof contract.releaseTag !== 'string' || !contract.releaseTag.trim()) {
-    throw new Error('release input must include a releaseTag');
+  if (contract.releaseTag !== PENDING_RELEASE_TAG &&
+      (typeof contract.releaseTag !== 'string' || !IMMUTABLE_CLI_TAG_PATTERN.test(contract.releaseTag))) {
+    throw new Error(`release input releaseTag must be ${PENDING_RELEASE_TAG} or an immutable cli-v<semver>-<12-char-sha> tag`);
   }
   return contract;
+}
+
+export async function readContract() {
+  let contract;
+  try {
+    contract = JSON.parse(await readFile(CONTRACT_PATH, 'utf8'));
+  } catch (error) {
+    throw new Error(`Cannot read ${CONTRACT_PATH}: ${error.message}`);
+  }
+  return validateContract(contract);
 }

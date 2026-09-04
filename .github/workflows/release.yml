@@ -17,11 +17,11 @@ jobs:
     name: Verify, package, and publish tagged VSIX
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           fetch-depth: 1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
@@ -69,9 +69,9 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.WILDESTAI_AZURE_PUBLISH_PAT }}
           VERSION: ${{ github.ref_name }}
-        run: npm run publish:vscode -- --packagePath "wildestai-${VERSION#v}.vsix"
+        run: npm run publish:vscode -- --packagePath "wildestai-${VERSION#v}.vsix" --skip-duplicate
       - name: Publish the same verified VSIX to Open VSX
         env:
           OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
           VERSION: ${{ github.ref_name }}
-        run: npm run publish:openvsx -- "wildestai-${VERSION#v}.vsix" -p "$OPENVSX_TOKEN"
+        run: npm run publish:openvsx -- "wildestai-${VERSION#v}.vsix" -p "$OPENVSX_TOKEN" --skip-duplicate

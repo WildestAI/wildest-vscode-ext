@@ -170,6 +170,7 @@
     "lint": "eslint src",
     "test": "vscode-test",
     "verify:release-input": "node scripts/release/verify-release-input.mjs",
+    "test:release-contract": "node --test scripts/release/release-contract.test.mjs",
     "package:vsix": "vsce package --no-dependencies",
     "package:preflight": "node scripts/release/preflight-package.mjs",
     "publish:vscode": "vsce publish",

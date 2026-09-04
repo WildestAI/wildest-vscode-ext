@@ -9,6 +9,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'wildestai.historyView';
 	private _view?: vscode.WebviewView;
 	private _currentRepoRoot?: string;
+	private _refreshPromise?: Promise<void>;
+	private _activeForceRefresh = false;
+	private _pendingForceRefresh = false;
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
@@ -43,16 +46,41 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	public async refresh(forceRefresh = true): Promise<void> {
-		try {
-			await this.loadGitHistory(forceRefresh);
-		} catch (error) {
-			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
-				// If we hit a timeout, schedule another refresh attempt
-				setTimeout(() => void this.refresh(forceRefresh), 2000);
-			} else {
-				throw error;
+		if (this._refreshPromise) {
+			// A forced refresh arriving while a cache-only load is in flight still needs one
+			// fresh pass. Concurrent forced refreshes share the active fresh pass.
+			if (forceRefresh && !this._activeForceRefresh) {
+				this._pendingForceRefresh = true;
 			}
+			return this._refreshPromise;
 		}
+
+		this._activeForceRefresh = forceRefresh;
+		this._refreshPromise = this.runRefreshes(forceRefresh);
+		try {
+			await this._refreshPromise;
+		} finally {
+			this._refreshPromise = undefined;
+			this._activeForceRefresh = false;
+		}
+	}
+
+	private async runRefreshes(forceRefresh: boolean): Promise<void> {
+		do {
+			this._pendingForceRefresh = false;
+			this._activeForceRefresh = forceRefresh;
+			try {
+				await this.loadGitHistory(forceRefresh);
+			} catch (error) {
+				if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
+					// If we hit a timeout, schedule another refresh attempt.
+					setTimeout(() => void this.refresh(forceRefresh), 2000);
+				} else {
+					throw error;
+				}
+			}
+			forceRefresh = this._pendingForceRefresh;
+		} while (forceRefresh);
 	}
 
 	private async loadGitHistory(forceRefresh: boolean): Promise<void> {

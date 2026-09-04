@@ -132,6 +132,37 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 2);
 	});
 
+	test('coalesces concurrent forced refreshes into one Git command', async () => {
+		let resolveExecute: (() => void) | undefined;
+		CliService.execute = async () => {
+			executeCalls++;
+			await new Promise<void>(resolve => { resolveExecute = resolve; });
+			return {
+				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
+				stderr: '',
+			};
+		};
+
+		const firstRefresh = provider.refresh(true);
+		const secondRefresh = provider.refresh(true);
+		await new Promise<void>(resolve => setImmediate(resolve));
+
+		assert.strictEqual(executeCalls, 1);
+		resolveExecute?.();
+		await Promise.all([firstRefresh, secondRefresh]);
+	});
+
+	test('runs one fresh pass when a forced refresh arrives during a cache-only load', async () => {
+		GitHistoryCache.update(repoRoot, [commit], ['* ']);
+
+		const cacheOnlyRefresh = provider.refresh(false);
+		const forcedRefresh = provider.refresh(true);
+		await Promise.all([cacheOnlyRefresh, forcedRefresh]);
+
+		assert.strictEqual(executeCalls, 1);
+		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 3);
+	});
+
 	test('failed refresh preserves cached history and reports a warning', async () => {
 		GitHistoryCache.update(repoRoot, [commit], ['* ']);
 		CliService.execute = async () => { throw new Error('failed'); };

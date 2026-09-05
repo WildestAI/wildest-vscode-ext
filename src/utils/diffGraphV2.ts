@@ -335,7 +335,8 @@ const warningCodes = ['PARSE_FAILURE', 'UNSUPPORTED_LANGUAGE', 'PARTIAL_ANALYSIS
 	'UNKNOWN', 'not_a_git_repository', 'git_diff_failed', 'malformed_git_output', 'missing_object_id',
 	'unsupported_worktree_entry', 'worktree_read_failed', 'hash_object_failed', 'malformed_hash_object_output',
 	'unmerged_index_entry', 'invalid_base_ref', 'invalid_head_ref', 'merge_base_failed',
-	'malformed_merge_base'] as const;
+	'malformed_merge_base', 'git_untracked_failed', 'gitlink_head_failed', 'malformed_gitlink_head',
+	'pathspec_outside_repository', 'undecodable_path'] as const;
 
 function metadataAt(value: unknown, path: string): void {
 	const metadata = objectAt(value, path);

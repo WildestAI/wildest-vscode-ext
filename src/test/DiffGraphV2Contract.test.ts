@@ -68,6 +68,11 @@ suite('DiffGraph v2 contract', () => {
 		'invalid_head_ref',
 		'merge_base_failed',
 		'malformed_merge_base',
+		'git_untracked_failed',
+		'gitlink_head_failed',
+		'malformed_gitlink_head',
+		'pathspec_outside_repository',
+		'undecodable_path',
 	]) {
 		test(`accepts the structured Git resolver warning ${code}`, () => {
 			const artifact = fixtureValue();

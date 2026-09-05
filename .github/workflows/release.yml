@@ -1,0 +1,77 @@
+name: Publish extension release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify, package, and publish tagged VSIX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Refuse a version or unresolved CLI release-input mismatch
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: node scripts/release/verify-tag.mjs
+      - name: Run extension tests before downloading release inputs
+        run: xvfb-run -a npm test
+      - name: Verify the requested CLI release is published and final
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+        run: |
+          cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
+          metadata="$(gh release view "$cli_tag" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isPrerelease)"
+          node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease) process.exit(1)' "$metadata" "$cli_tag"
+      - name: Download and verify all locked DiffGraph CLI release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+        run: |
+          cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
+          rm -rf cli-release bin
+          mkdir cli-release bin
+          gh release download "$cli_tag" --repo "$CLI_REPOSITORY" --dir cli-release
+          node scripts/release/verify-cli-release.mjs cli-release
+          cp cli-release/wild-* bin/
+          chmod +x bin/wild-macos-arm64 bin/wild-macos-x64 bin/wild-linux-arm64 bin/wild-linux-x64
+      - name: Build and package the verified VSIX
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          npm run package
+          npm run package:vsix -- --out "wildestai-${VERSION#v}.vsix"
+      - name: Refuse to publish without both marketplace credentials
+        env:
+          WILDESTAI_AZURE_PUBLISH_PAT: ${{ secrets.WILDESTAI_AZURE_PUBLISH_PAT }}
+          OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
+        run: |
+          test -n "$WILDESTAI_AZURE_PUBLISH_PAT" || { echo 'WILDESTAI_AZURE_PUBLISH_PAT is required.' >&2; exit 1; }
+          test -n "$OPENVSX_TOKEN" || { echo 'OPENVSX_TOKEN is required.' >&2; exit 1; }
+      - name: Publish the verified VSIX to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.WILDESTAI_AZURE_PUBLISH_PAT }}
+          VERSION: ${{ github.ref_name }}
+        run: npm run publish:vscode -- --packagePath "wildestai-${VERSION#v}.vsix" --skip-duplicate
+      - name: Publish the same verified VSIX to Open VSX
+        env:
+          OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: npm run publish:openvsx -- "wildestai-${VERSION#v}.vsix" -p "$OPENVSX_TOKEN" --skip-duplicate

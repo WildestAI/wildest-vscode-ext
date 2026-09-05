@@ -12,7 +12,10 @@ export const PENDING_RELEASE_TAG = 'PENDING_IMMUTABLE_CLI_RELEASE';
 export const IMMUTABLE_CLI_TAG_PATTERN = /^cli-v\d+\.\d+\.\d+-[0-9a-f]{12}$/i;
 
 /**
- * Enforces the fixed release-input shape and immutable CLI tag policy.
+ * Validates the release contract against the required repository, assets, checksum and manifest files, and release tag policy.
+ * @param {Object} contract - The release contract to validate.
+ * @returns {Object} The validated release contract.
+ * @throws {Error} If the contract does not satisfy the required release-input rules.
  */
 export function validateContract(contract) {
   if (contract.repository !== 'WildestAI/DiffGraph-CLI') {
@@ -32,6 +35,11 @@ export function validateContract(contract) {
   return contract;
 }
 
+/**
+ * Read and validate the release contract.
+ * @returns {object} The validated release contract.
+ * @throws {Error} If the contract cannot be read, parsed, or validated.
+ */
 export async function readContract() {
   let contract;
   try {

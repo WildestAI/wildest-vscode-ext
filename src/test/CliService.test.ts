@@ -5,7 +5,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { CliService } from '../services/CliService';
+import { CliCancelledError, CliService } from '../services/CliService';
 
 const fileError = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
 const regularFileStats = { isFile: () => true } as fs.Stats;
@@ -392,6 +392,22 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(executed, false);
 		assert.strictEqual(probe.status, 'unavailable');
 		assert.strictEqual(probe.cliVersion, 'not available');
+	});
+
+	test('cancels a CLI operation before it starts producing output', async () => {
+		let killed = false;
+		const command = { executable: 'wild', args: ['diff'], env: {} };
+		const cancelled = {
+			isCancellationRequested: true,
+			onCancellationRequested: () => ({ dispose: () => undefined }),
+		} as unknown as vscode.CancellationToken;
+		const spawn = () => ({ kill: () => { killed = true; } }) as any;
+
+		await assert.rejects(
+			CliService.execute(command, '/synthetic-repository', undefined, cancelled, spawn as any),
+			CliCancelledError,
+		);
+		assert.strictEqual(killed, true);
 	});
 
 	test('redacts CLI probe failures', async () => {

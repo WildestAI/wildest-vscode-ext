@@ -9,6 +9,13 @@ import { DiffGraphContractError, validateDiffGraphArtifact } from '../utils/diff
 export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'invalid' | 'unsupported';
 export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable';
 
+export class CliCancelledError extends Error {
+	public constructor() {
+		super('WildestAI CLI operation was cancelled.');
+		this.name = 'CliCancelledError';
+	}
+}
+
 export interface CliRuntimeDiagnostics {
 	source: 'development environment' | 'packaged binary';
 	status: CliRuntimeStatus;
@@ -225,7 +232,9 @@ export class CliService {
 	public static async execute(
 		command: CliCommand,
 		repoRoot: string,
-		progress?: vscode.Progress<{ message: string }>
+		progress?: vscode.Progress<{ message: string }>,
+		cancellationToken?: vscode.CancellationToken,
+		spawnProcess: typeof cp.spawn = cp.spawn,
 	): Promise<CliOutput> {
 		let cliStdout = '', cliStderr = '';
 		const startTime = Date.now();
@@ -242,11 +251,28 @@ export class CliService {
 		}, 1000);
 
 		try {
-			await new Promise((resolve, reject) => {
-				const child = cp.spawn(command.executable, command.args, {
+			await new Promise<void>((resolve, reject) => {
+				const child = spawnProcess(command.executable, command.args, {
 					cwd: repoRoot,
 					env: command.env
 				});
+				let settled = false;
+				let cancellationSubscription: vscode.Disposable | undefined;
+				const settle = (error?: Error) => {
+					if (settled) { return; }
+					settled = true;
+					cancellationSubscription?.dispose();
+					error ? reject(error) : resolve();
+				};
+				const cancel = () => {
+					child.kill();
+					settle(new CliCancelledError());
+				};
+				if (cancellationToken?.isCancellationRequested) {
+					cancel();
+					return;
+				}
+				cancellationSubscription = cancellationToken?.onCancellationRequested(cancel);
 
 				child.stdout.setEncoding('utf8');
 				child.stderr.setEncoding('utf8');
@@ -267,9 +293,9 @@ export class CliService {
 					}
 				});
 
-				child.on('error', reject);
+				child.on('error', (error) => settle(error));
 				child.on('close', (code: number) => {
-					code === 0 ? resolve(undefined) : reject(new Error(`wild exited with code ${code}`));
+					code === 0 ? settle() : settle(new Error(`wild exited with code ${code}`));
 				});
 			});
 		} finally {

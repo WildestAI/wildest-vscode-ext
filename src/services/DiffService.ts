@@ -173,8 +173,8 @@ export class DiffService {
 		await vscode.window.withProgress({
 			location: vscode.ProgressLocation.Notification,
 			title: `Generating DiffGraph for commit ${commitHash.substring(0, 7)}...`,
-			cancellable: false
-		}, async (progress) => {
+			cancellable: true
+		}, async (progress, cancellationToken) => {
 			try {
 				// Build temp file path
 				const htmlFilePath = this.buildTempFilePath(repoRoot, `commit-${commitHash}`);
@@ -182,7 +182,7 @@ export class DiffService {
 				// Call CLI via CliService with an explicit legacy HTML request and commit range
 				const args = buildHtmlDiffArgs(htmlFilePath, { kind: 'commit', commitHash });
 				const cliCommand = CliService.setupCommand(args, context);
-				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
+				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, cancellationToken);
 
 				// Log output
 				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
@@ -220,8 +220,8 @@ export class DiffService {
 		await vscode.window.withProgress({
 			location: vscode.ProgressLocation.Notification,
 			title: `Generating ${stage} DiffGraph for ${path.basename(repoRoot)}...`,
-			cancellable: false
-		}, async (progress) => {
+			cancellable: true
+		}, async (progress, cancellationToken) => {
 			try {
 				// Build temp file path
 				const htmlFilePath = this.buildTempFilePath(repoRoot, stage);
@@ -232,7 +232,7 @@ export class DiffService {
 					staged: stage === 'staged'
 				});
 				const cliCommand = CliService.setupCommand(args, context);
-				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
+				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, cancellationToken);
 
 				// Log output
 				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;

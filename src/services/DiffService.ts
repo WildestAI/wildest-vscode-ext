@@ -18,7 +18,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GitService } from './GitService';
-import { CliService } from './CliService';
+import { CliCancelledError, CliService } from './CliService';
 import { DiffGraphCache } from './DiffGraphCache';
 import { NotificationService } from './NotificationService';
 import { CliCommand } from '../utils/types';
@@ -110,8 +110,8 @@ export class DiffService {
 
 			// Generate new content
 			await this.generateCommitDiff(context, repoRoot, commitHash);
-		} catch (error: any) {
-			vscode.window.showErrorMessage(`Failed to open commit diff: ${error.message}`);
+		} catch (error: unknown) {
+			this.showDiffError(error, 'open commit diff');
 		}
 	}
 
@@ -134,8 +134,8 @@ export class DiffService {
 
 			// Generate new content
 			await this.generateAndShowDiff(context, repoRoot, stage);
-		} catch (error: any) {
-			vscode.window.showErrorMessage(`Failed to open ${staged ? 'staged' : 'unstaged'} changes: ${error.message}`);
+		} catch (error: unknown) {
+			this.showDiffError(error, `open ${staged ? 'staged' : 'unstaged'} changes`);
 		}
 	}
 
@@ -154,9 +154,18 @@ export class DiffService {
 
 			// Generate new content
 			await this.generateAndShowDiff(context, repoRoot, stage);
-		} catch (error: any) {
-			vscode.window.showErrorMessage(`Failed to refresh ${staged ? 'staged' : 'unstaged'} changes: ${error.message}`);
+		} catch (error: unknown) {
+			this.showDiffError(error, `refresh ${staged ? 'staged' : 'unstaged'} changes`);
 		}
+	}
+
+	private showDiffError(error: unknown, operation: string): void {
+		if (error instanceof CliCancelledError) {
+			this._outputChannel.appendLine(`Cancelled ${operation}; keeping the current DiffGraph state.`);
+			return;
+		}
+		const message = error instanceof Error ? error.message : String(error);
+		vscode.window.showErrorMessage(`Failed to ${operation}: ${message}`);
 	}
 
 	/**
@@ -173,8 +182,8 @@ export class DiffService {
 		await vscode.window.withProgress({
 			location: vscode.ProgressLocation.Notification,
 			title: `Generating DiffGraph for commit ${commitHash.substring(0, 7)}...`,
-			cancellable: false
-		}, async (progress) => {
+			cancellable: true
+		}, async (progress, cancellationToken) => {
 			try {
 				// Build temp file path
 				const htmlFilePath = this.buildTempFilePath(repoRoot, `commit-${commitHash}`);
@@ -182,7 +191,7 @@ export class DiffService {
 				// Call CLI via CliService with an explicit legacy HTML request and commit range
 				const args = buildHtmlDiffArgs(htmlFilePath, { kind: 'commit', commitHash });
 				const cliCommand = CliService.setupCommand(args, context);
-				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
+				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, cancellationToken);
 
 				// Log output
 				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
@@ -220,8 +229,8 @@ export class DiffService {
 		await vscode.window.withProgress({
 			location: vscode.ProgressLocation.Notification,
 			title: `Generating ${stage} DiffGraph for ${path.basename(repoRoot)}...`,
-			cancellable: false
-		}, async (progress) => {
+			cancellable: true
+		}, async (progress, cancellationToken) => {
 			try {
 				// Build temp file path
 				const htmlFilePath = this.buildTempFilePath(repoRoot, stage);
@@ -232,7 +241,7 @@ export class DiffService {
 					staged: stage === 'staged'
 				});
 				const cliCommand = CliService.setupCommand(args, context);
-				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress);
+				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, cancellationToken);
 
 				// Log output
 				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;

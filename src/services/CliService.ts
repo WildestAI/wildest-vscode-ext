@@ -251,6 +251,11 @@ export class CliService {
 		}, 1000);
 
 		try {
+			// Do not start a process for work the user has already cancelled.
+			if (cancellationToken?.isCancellationRequested) {
+				throw new CliCancelledError();
+			}
+
 			await new Promise<void>((resolve, reject) => {
 				const child = spawnProcess(command.executable, command.args, {
 					cwd: repoRoot,
@@ -268,10 +273,6 @@ export class CliService {
 					child.kill();
 					settle(new CliCancelledError());
 				};
-				if (cancellationToken?.isCancellationRequested) {
-					cancel();
-					return;
-				}
 				cancellationSubscription = cancellationToken?.onCancellationRequested(cancel);
 
 				child.stdout.setEncoding('utf8');

@@ -18,7 +18,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GitService } from './GitService';
-import { CliService } from './CliService';
+import { CliCancelledError, CliService } from './CliService';
 import { DiffGraphCache } from './DiffGraphCache';
 import { NotificationService } from './NotificationService';
 import { CliCommand } from '../utils/types';
@@ -110,8 +110,8 @@ export class DiffService {
 
 			// Generate new content
 			await this.generateCommitDiff(context, repoRoot, commitHash);
-		} catch (error: any) {
-			vscode.window.showErrorMessage(`Failed to open commit diff: ${error.message}`);
+		} catch (error: unknown) {
+			this.showDiffError(error, 'open commit diff');
 		}
 	}
 
@@ -134,8 +134,8 @@ export class DiffService {
 
 			// Generate new content
 			await this.generateAndShowDiff(context, repoRoot, stage);
-		} catch (error: any) {
-			vscode.window.showErrorMessage(`Failed to open ${staged ? 'staged' : 'unstaged'} changes: ${error.message}`);
+		} catch (error: unknown) {
+			this.showDiffError(error, `open ${staged ? 'staged' : 'unstaged'} changes`);
 		}
 	}
 
@@ -154,9 +154,18 @@ export class DiffService {
 
 			// Generate new content
 			await this.generateAndShowDiff(context, repoRoot, stage);
-		} catch (error: any) {
-			vscode.window.showErrorMessage(`Failed to refresh ${staged ? 'staged' : 'unstaged'} changes: ${error.message}`);
+		} catch (error: unknown) {
+			this.showDiffError(error, `refresh ${staged ? 'staged' : 'unstaged'} changes`);
 		}
+	}
+
+	private showDiffError(error: unknown, operation: string): void {
+		if (error instanceof CliCancelledError) {
+			this._outputChannel.appendLine(`Cancelled ${operation}; keeping the current DiffGraph state.`);
+			return;
+		}
+		const message = error instanceof Error ? error.message : String(error);
+		vscode.window.showErrorMessage(`Failed to ${operation}: ${message}`);
 	}
 
 	/**

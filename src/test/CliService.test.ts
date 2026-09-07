@@ -394,20 +394,23 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(probe.cliVersion, 'not available');
 	});
 
-	test('cancels a CLI operation before it starts producing output', async () => {
-		let killed = false;
+	test('does not spawn a CLI operation that was cancelled before it starts', async () => {
+		let spawnCalls = 0;
 		const command = { executable: 'wild', args: ['diff'], env: {} };
 		const cancelled = {
 			isCancellationRequested: true,
 			onCancellationRequested: () => ({ dispose: () => undefined }),
 		} as unknown as vscode.CancellationToken;
-		const spawn = () => ({ kill: () => { killed = true; } }) as any;
+		const spawn = () => {
+			spawnCalls += 1;
+			return {} as any;
+		};
 
 		await assert.rejects(
 			CliService.execute(command, '/synthetic-repository', undefined, cancelled, spawn as any),
 			CliCancelledError,
 		);
-		assert.strictEqual(killed, true);
+		assert.strictEqual(spawnCalls, 0);
 	});
 
 	test('redacts CLI probe failures', async () => {

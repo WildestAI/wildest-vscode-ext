@@ -120,8 +120,13 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		let hasUsableHistory = false;
 		try {
 			const repositoryDiscoveryStartedAt = performance.now();
-			const repositories = await GitService.getRepositories();
-			repositoryDiscoveryMs = performance.now() - repositoryDiscoveryStartedAt;
+			const repositories = await (async () => {
+				try {
+					return await GitService.getRepositories();
+				} finally {
+					repositoryDiscoveryMs = performance.now() - repositoryDiscoveryStartedAt;
+				}
+			})();
 			if (repositories.length === 0) {
 				this._view.webview.postMessage({ type: 'empty' });
 				return;
@@ -159,8 +164,13 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			const gitFetchStartedAt = performance.now();
-			const { commits, graphLines } = await this.getGitCommits(repoRoot);
-			gitFetchMs = performance.now() - gitFetchStartedAt;
+			const { commits, graphLines } = await (async () => {
+				try {
+					return await this.getGitCommits(repoRoot);
+				} finally {
+					gitFetchMs = performance.now() - gitFetchStartedAt;
+				}
+			})();
 
 			const graphBuildStartedAt = performance.now();
 			const graphData = this.buildGraphData(commits, graphLines);

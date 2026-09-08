@@ -97,6 +97,20 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.ok(timing.totalMs >= 0);
 	});
 
+	test('records repository discovery timing when discovery fails', async () => {
+		GitService.getRepositories = async () => {
+			await new Promise<void>(resolve => setTimeout(resolve, 5));
+			throw new Error('repository discovery failed');
+		};
+
+		await (provider as any).loadGitHistory(false);
+
+		const timing = provider.getLastPerformanceSnapshot();
+		assert.strictEqual(timing.source, 'none');
+		assert.ok(timing.repositoryDiscoveryMs > 0);
+		assert.strictEqual(messages.some(message => message.type === 'error'), true);
+	});
+
 	test('isolates warm cache entries from caller mutation', () => {
 		GitHistoryCache.update(repoRoot, [commit], ['* ']);
 		const firstRead = GitHistoryCache.getCached(repoRoot)!;
@@ -199,7 +213,9 @@ suite('HistoryViewProvider cache policy', () => {
 
 		assert.strictEqual(messages.some(message => message.type === 'error'), false);
 		assert.match(warning, /Showing the last cached result/);
-		assert.strictEqual(provider.getLastPerformanceSnapshot().source, 'cache');
+		const timing = provider.getLastPerformanceSnapshot();
+		assert.strictEqual(timing.source, 'cache');
+		assert.ok(timing.gitFetchMs !== undefined && timing.gitFetchMs >= 0);
 	});
 
 	test('schedules another refresh when Git history times out', async () => {

@@ -152,8 +152,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					repoName
 				});
 				hasUsableHistory = true;
+				source = 'cache';
 				if (!forceRefresh) {
-					source = 'cache';
 					return;
 				}
 			}

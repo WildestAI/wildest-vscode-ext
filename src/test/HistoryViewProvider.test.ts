@@ -199,6 +199,7 @@ suite('HistoryViewProvider cache policy', () => {
 
 		assert.strictEqual(messages.some(message => message.type === 'error'), false);
 		assert.match(warning, /Showing the last cached result/);
+		assert.strictEqual(provider.getLastPerformanceSnapshot().source, 'cache');
 	});
 
 	test('schedules another refresh when Git history times out', async () => {

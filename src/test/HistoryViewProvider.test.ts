@@ -83,6 +83,20 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(messages.find(message => message.type === 'commits').commits[0].hash, commit.hash);
 	});
 
+	test('records local timing for a warm-cache load without Git work', async () => {
+		GitHistoryCache.update(repoRoot, [commit], ['* ']);
+
+		await (provider as any).loadGitHistory(false);
+
+		const timing = provider.getLastPerformanceSnapshot();
+		assert.strictEqual(timing.source, 'cache');
+		assert.strictEqual(timing.gitFetchMs, undefined);
+		assert.ok(timing.repositoryDiscoveryMs >= 0);
+		assert.ok(timing.cacheLookupMs >= 0);
+		assert.ok(timing.graphBuildMs >= 0);
+		assert.ok(timing.totalMs >= 0);
+	});
+
 	test('isolates warm cache entries from caller mutation', () => {
 		GitHistoryCache.update(repoRoot, [commit], ['* ']);
 		const firstRead = GitHistoryCache.getCached(repoRoot)!;
@@ -121,6 +135,15 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(executeCalls, 1);
 		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 1);
 		assert.strictEqual(GitHistoryCache.getCached(repoRoot)?.commits[0].hash, commit.hash);
+	});
+
+	test('records local timing when Git supplies a cold history load', async () => {
+		await (provider as any).loadGitHistory(false);
+
+		const timing = provider.getLastPerformanceSnapshot();
+		assert.strictEqual(timing.source, 'git');
+		assert.ok(timing.gitFetchMs !== undefined && timing.gitFetchMs >= 0);
+		assert.ok(timing.totalMs >= timing.gitFetchMs!);
 	});
 
 	test('explicit refresh bypasses a warm cache', async () => {

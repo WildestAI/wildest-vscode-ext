@@ -94,6 +94,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "wildestai.showHistoryPerformanceDiagnostics",
+        "title": "Wildest AI: Show History Performance",
+        "category": "Wildest AI"
+      },
+      {
         "command": "wildestai.showRuntimeDiagnostics",
         "title": "Wildest AI: Show Runtime Diagnostics",
         "category": "Wildest AI"

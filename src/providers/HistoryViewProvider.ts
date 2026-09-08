@@ -5,6 +5,15 @@ import { CliService } from '../services/CliService';
 import { GitCommit, GitGraphNode, CliCommand } from '../utils/types';
 import { GitHistoryCache } from '../services/GitHistoryCache';
 
+export interface HistoryPerformanceSnapshot {
+	source: 'cache' | 'git' | 'none';
+	repositoryDiscoveryMs: number;
+	cacheLookupMs: number;
+	gitFetchMs: number | undefined;
+	graphBuildMs: number;
+	totalMs: number;
+}
+
 export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'wildestai.historyView';
 	private _view?: vscode.WebviewView;
@@ -12,6 +21,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _refreshPromise?: Promise<void>;
 	private _activeForceRefresh = false;
 	private _pendingForceRefresh = false;
+	private _lastPerformanceSnapshot: HistoryPerformanceSnapshot = {
+		source: 'none', repositoryDiscoveryMs: 0, cacheLookupMs: 0, gitFetchMs: undefined, graphBuildMs: 0, totalMs: 0,
+	};
 
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
@@ -65,6 +77,14 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
+	/**
+	 * Timing from the most recent history load. This is deliberately local-only:
+	 * it contains no repository paths, commit data, or telemetry payload.
+	 */
+	public getLastPerformanceSnapshot(): HistoryPerformanceSnapshot {
+		return { ...this._lastPerformanceSnapshot };
+	}
+
 	private async runRefreshes(forceRefresh: boolean): Promise<void> {
 		do {
 			this._pendingForceRefresh = false;
@@ -87,13 +107,21 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		if (!this._view) {
 			return;
 		}
+		const startedAt = performance.now();
+		let repositoryDiscoveryMs = 0;
+		let cacheLookupMs = 0;
+		let gitFetchMs: number | undefined;
+		let graphBuildMs = 0;
+		let source: HistoryPerformanceSnapshot['source'] = 'none';
 
 		// Show loading state immediately at the start
 		this._view.webview.postMessage({ type: 'loading', state: true });
 
 		let hasUsableHistory = false;
 		try {
+			const repositoryDiscoveryStartedAt = performance.now();
 			const repositories = await GitService.getRepositories();
+			repositoryDiscoveryMs = performance.now() - repositoryDiscoveryStartedAt;
 			if (repositories.length === 0) {
 				this._view.webview.postMessage({ type: 'empty' });
 				return;
@@ -106,9 +134,13 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			this._view.webview.html = this.getHtmlForWebview(this._view.webview, repoName);
 
 			// Check cache and show cached data immediately if available
+			const cacheLookupStartedAt = performance.now();
 			const cached = GitHistoryCache.getCached(repoRoot);
+			cacheLookupMs = performance.now() - cacheLookupStartedAt;
 			if (cached) {
+				const graphBuildStartedAt = performance.now();
 				const graphData = this.buildGraphData(cached.commits, cached.graphLines);
+				graphBuildMs += performance.now() - graphBuildStartedAt;
 				this._view.webview.postMessage({
 					type: 'commits',
 					commits: graphData.map(node => ({
@@ -121,13 +153,18 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				});
 				hasUsableHistory = true;
 				if (!forceRefresh) {
+					source = 'cache';
 					return;
 				}
 			}
 
+			const gitFetchStartedAt = performance.now();
 			const { commits, graphLines } = await this.getGitCommits(repoRoot);
+			gitFetchMs = performance.now() - gitFetchStartedAt;
 
+			const graphBuildStartedAt = performance.now();
 			const graphData = this.buildGraphData(commits, graphLines);
+			graphBuildMs += performance.now() - graphBuildStartedAt;
 			this._view.webview.postMessage({
 				type: 'commits',
 				commits: graphData.map(node => ({
@@ -138,6 +175,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				repoPath: repoRoot,
 				repoName
 			});
+			source = 'git';
 		} catch (error: any) {
 			if (hasUsableHistory) {
 				void vscode.window.showWarningMessage('WildestAI could not refresh Git history. Showing the last cached result.');
@@ -149,6 +187,14 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				throw error;
 			}
 		} finally {
+			this._lastPerformanceSnapshot = {
+				source,
+				repositoryDiscoveryMs,
+				cacheLookupMs,
+				gitFetchMs,
+				graphBuildMs,
+				totalMs: performance.now() - startedAt,
+			};
 			// Ensure loading state is turned off in case of unexpected errors
 			this._view.webview.postMessage({ type: 'loading', state: false });
 		}

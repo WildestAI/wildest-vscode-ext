@@ -65,6 +65,22 @@ export function activate(context: vscode.ExtensionContext) {
 		await historyProvider.refresh();
 	}));
 
+	const historyPerformanceOutput = vscode.window.createOutputChannel('WildestAI Performance');
+	context.subscriptions.push(historyPerformanceOutput);
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showHistoryPerformanceDiagnostics', () => {
+		const timing = historyProvider.getLastPerformanceSnapshot();
+		historyPerformanceOutput.clear();
+		historyPerformanceOutput.appendLine('WildestAI local history performance');
+		historyPerformanceOutput.appendLine(`Source: ${timing.source}`);
+		historyPerformanceOutput.appendLine(`Repository discovery: ${timing.repositoryDiscoveryMs.toFixed(1)} ms`);
+		historyPerformanceOutput.appendLine(`Cache lookup: ${timing.cacheLookupMs.toFixed(1)} ms`);
+		historyPerformanceOutput.appendLine(`Git fetch: ${timing.gitFetchMs === undefined ? 'not run' : `${timing.gitFetchMs.toFixed(1)} ms`}`);
+		historyPerformanceOutput.appendLine(`Graph build: ${timing.graphBuildMs.toFixed(1)} ms`);
+		historyPerformanceOutput.appendLine(`Total: ${timing.totalMs.toFixed(1)} ms`);
+		historyPerformanceOutput.appendLine('This report stays local and contains no repository paths, commits, or telemetry.');
+		historyPerformanceOutput.show(true);
+	}));
+
 	// Register the hello world command
 	const helloDisposable = vscode.commands.registerCommand('wildestai.helloWorld', () => {
 		vscode.window.showInformationMessage('Hello World from Wildest AI!');

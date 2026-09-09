@@ -157,7 +157,12 @@ export class GitService {
 			);
 			for (const relativePath of (untracked as Buffer).toString('utf8').split('\0').filter(Boolean).sort()) {
 				const filePath = path.resolve(repoRoot, relativePath);
-				if (path.relative(repoRoot, filePath).startsWith('..')) {
+				const relativeToRepo = path.relative(repoRoot, filePath);
+				if (
+					relativeToRepo === '..' ||
+					relativeToRepo.startsWith(`..${path.sep}`) ||
+					path.isAbsolute(relativeToRepo)
+				) {
 					throw new Error(`Git returned an untracked path outside the repository: ${relativePath}`);
 				}
 				hash.update(relativePath);

@@ -64,6 +64,13 @@ suite('DiffGraphCache Test Suite', () => {
         assert.strictEqual(unstagedEntry.htmlPath, unstagedHtml, 'Unstaged HTML path should match');
     });
 
+    test('only reuses an entry when its content fingerprint matches', () => {
+        const repoRoot = '/path/to/repo';
+        cache.set(repoRoot, 'staged', '/tmp/staged.html', 'before');
+        assert.strictEqual(cache.get(repoRoot, 'staged', 'before')?.htmlPath, '/tmp/staged.html');
+        assert.strictEqual(cache.get(repoRoot, 'staged', 'after'), undefined);
+    });
+
     test('has method works correctly', () => {
         const repoRoot = '/path/to/repo';
         const htmlPath = '/tmp/test.html';

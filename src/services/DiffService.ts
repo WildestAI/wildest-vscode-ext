@@ -123,9 +123,10 @@ export class DiffService {
 			const repositories = await GitService.getRepositories();
 			const repoRoot = repoPath || repositories[0]?.repoRoot;
 			const stage = staged ? 'staged' : 'unstaged';
+			const contentFingerprint = await GitService.getDiffContentFingerprint(repoRoot, staged);
 
-			// Check cache first
-			const cachedEntry = this._cache.get(repoRoot, stage);
+			// Reuse only an artifact generated from the same immutable diff input.
+			const cachedEntry = this._cache.get(repoRoot, stage, contentFingerprint);
 			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath)) {
 				this._outputChannel.appendLine(`Using cached ${stage} diff for ${path.basename(repoRoot)}`);
 				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
@@ -133,7 +134,7 @@ export class DiffService {
 			}
 
 			// Generate new content
-			await this.generateAndShowDiff(context, repoRoot, stage);
+			await this.generateAndShowDiff(context, repoRoot, stage, contentFingerprint);
 		} catch (error: unknown) {
 			this.showDiffError(error, `open ${staged ? 'staged' : 'unstaged'} changes`);
 		}
@@ -152,8 +153,9 @@ export class DiffService {
 			this._cache.invalidate(repoRoot, stage);
 			this._outputChannel.appendLine(`Cache invalidated for ${stage} diff in ${path.basename(repoRoot)}`);
 
-			// Generate new content
-			await this.generateAndShowDiff(context, repoRoot, stage);
+			// Generate new content from the latest content-addressed input.
+			const contentFingerprint = await GitService.getDiffContentFingerprint(repoRoot, staged);
+			await this.generateAndShowDiff(context, repoRoot, stage, contentFingerprint);
 		} catch (error: unknown) {
 			this.showDiffError(error, `refresh ${staged ? 'staged' : 'unstaged'} changes`);
 		}
@@ -221,7 +223,8 @@ export class DiffService {
 	private async generateAndShowDiff(
 		context: vscode.ExtensionContext,
 		repoRoot: string,
-		stage: 'staged' | 'unstaged'
+		stage: 'staged' | 'unstaged',
+		contentFingerprint: string
 	): Promise<void> {
 		const startTime = Date.now();
 		await this.showLoadingScreen();
@@ -248,7 +251,7 @@ export class DiffService {
 				this.logOutput(cmdString, stdout, stderr);
 
 				// Cache the result
-				this._cache.set(repoRoot, stage, htmlFilePath);
+				this._cache.set(repoRoot, stage, htmlFilePath, contentFingerprint);
 
 				// Show notification
 				this._notificationService.sendOperationComplete(

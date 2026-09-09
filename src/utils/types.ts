@@ -31,6 +31,8 @@ export interface DiffGraphCacheEntry {
 	htmlPath: string;
 	/** Timestamp when the cache entry was generated */
 	generatedAt: number;
+	/** SHA-256 identity of the exact Git input used to render this entry. */
+	contentFingerprint?: string;
 }
 
 export type DiffGraphCacheKey = `${string}:staged` | `${string}:unstaged` | `${string}:commit-${string}`;

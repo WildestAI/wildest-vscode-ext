@@ -1,6 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs/promises';
+import { createHash } from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { GitInfo } from '../utils/types';
+
+const execFileAsync = promisify(execFile);
 
 export class GitService {
 	private static gitAPI: any;
@@ -122,5 +128,45 @@ export class GitService {
 		});
 
 		return selected?.repoPath;
+	}
+
+	/**
+	 * Return a content address for the exact input to a staged or unstaged
+	 * DiffGraph. Git's binary diff preserves mode, rename, and blob changes;
+	 * unstaged fingerprints additionally include untracked file bytes because
+	 * the CLI represents those snapshots too.
+	 */
+	public static async getDiffContentFingerprint(repoRoot: string, staged: boolean): Promise<string> {
+		const args = ['diff', '--binary', '--no-ext-diff'];
+		if (staged) {
+			args.push('--cached');
+		}
+		const { stdout } = await execFileAsync('git', args, {
+			cwd: repoRoot,
+			encoding: 'buffer',
+			maxBuffer: 20 * 1024 * 1024,
+		});
+		const hash = createHash('sha256');
+		hash.update(staged ? 'staged\0' : 'unstaged\0');
+		hash.update(stdout as Buffer);
+
+		if (!staged) {
+			const { stdout: untracked } = await execFileAsync(
+				'git', ['ls-files', '--others', '--exclude-standard', '-z'],
+				{ cwd: repoRoot, encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 }
+			);
+			for (const relativePath of (untracked as Buffer).toString('utf8').split('\0').filter(Boolean).sort()) {
+				const filePath = path.resolve(repoRoot, relativePath);
+				if (path.relative(repoRoot, filePath).startsWith('..')) {
+					throw new Error(`Git returned an untracked path outside the repository: ${relativePath}`);
+				}
+				hash.update(relativePath);
+				hash.update('\0');
+				hash.update(await fs.readFile(filePath));
+				hash.update('\0');
+			}
+		}
+
+		return hash.digest('hex');
 	}
 }

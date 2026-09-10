@@ -19,9 +19,12 @@ suite('GitService Test Suite', () => {
 			execFileSync('git', ['init', '--quiet', repoRoot]);
 			await fs.writeFile(path.join(repoRoot, '..notes'), 'untracked content');
 
-			const fingerprint = await GitService.getDiffContentFingerprint(repoRoot, false);
+			const initialFingerprint = await GitService.getDiffContentFingerprint(repoRoot, false);
+			await fs.writeFile(path.join(repoRoot, '..notes'), 'updated untracked content');
+			const updatedFingerprint = await GitService.getDiffContentFingerprint(repoRoot, false);
 
-			assert.match(fingerprint, /^[a-f0-9]{64}$/);
+			assert.match(initialFingerprint, /^[a-f0-9]{64}$/);
+			assert.notStrictEqual(updatedFingerprint, initialFingerprint);
 		} finally {
 			await fs.rm(repoRoot, { recursive: true, force: true });
 		}

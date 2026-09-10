@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { createReadStream } from 'fs';
 import { createHash } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -167,7 +168,9 @@ export class GitService {
 				}
 				hash.update(relativePath);
 				hash.update('\0');
-				hash.update(await fs.readFile(filePath));
+				for await (const chunk of createReadStream(filePath)) {
+					hash.update(chunk);
+				}
 				hash.update('\0');
 			}
 		}

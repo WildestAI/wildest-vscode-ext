@@ -46,19 +46,24 @@ export class DiffGraphCache {
     /**
      * Get a cached entry for the given repository and stage
      */
-    public get(repoRoot: string, stage: 'staged' | 'unstaged'): DiffGraphCacheEntry | undefined {
+    public get(repoRoot: string, stage: 'staged' | 'unstaged', contentFingerprint?: string): DiffGraphCacheEntry | undefined {
         const key = this.createKey(repoRoot, stage);
-        return this._cache.get(key);
+        const entry = this._cache.get(key);
+        if (contentFingerprint !== undefined && entry?.contentFingerprint !== contentFingerprint) {
+            return undefined;
+        }
+        return entry;
     }
 
     /**
      * Set a cache entry for the given repository and stage
      */
-    public set(repoRoot: string, stage: 'staged' | 'unstaged', htmlPath: string): void {
+    public set(repoRoot: string, stage: 'staged' | 'unstaged', htmlPath: string, contentFingerprint?: string): void {
         const key = this.createKey(repoRoot, stage);
         const entry: DiffGraphCacheEntry = {
             htmlPath,
-            generatedAt: Date.now()
+            generatedAt: Date.now(),
+            contentFingerprint
         };
         this._cache.set(key, entry);
     }

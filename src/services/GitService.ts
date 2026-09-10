@@ -1,6 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs/promises';
+import { createReadStream } from 'fs';
+import { createHash } from 'crypto';
+import { execFile, spawn } from 'child_process';
+import { promisify } from 'util';
 import { GitInfo } from '../utils/types';
+
+const execFileAsync = promisify(execFile);
 
 export class GitService {
 	private static gitAPI: any;
@@ -122,5 +129,65 @@ export class GitService {
 		});
 
 		return selected?.repoPath;
+	}
+
+	/**
+	 * Return a content address for the exact input to a staged or unstaged
+	 * DiffGraph. Git's binary diff preserves mode, rename, and blob changes;
+	 * unstaged fingerprints additionally include untracked file bytes because
+	 * the CLI represents those snapshots too.
+	 */
+	public static async getDiffContentFingerprint(repoRoot: string, staged: boolean): Promise<string> {
+		const args = ['diff', '--binary', '--no-ext-diff'];
+		if (staged) {
+			args.push('--cached');
+		}
+		const hash = createHash('sha256');
+		hash.update(staged ? 'staged\0' : 'unstaged\0');
+		await this.hashGitDiff(repoRoot, args, hash);
+
+		if (!staged) {
+			const { stdout: untracked } = await execFileAsync(
+				'git', ['ls-files', '--others', '--exclude-standard', '-z'],
+				{ cwd: repoRoot, encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 }
+			);
+			for (const relativePath of (untracked as Buffer).toString('utf8').split('\0').filter(Boolean).sort()) {
+				const filePath = path.resolve(repoRoot, relativePath);
+				const relativeToRepo = path.relative(repoRoot, filePath);
+				if (
+					relativeToRepo === '..' ||
+					relativeToRepo.startsWith(`..${path.sep}`) ||
+					path.isAbsolute(relativeToRepo)
+				) {
+					throw new Error(`Git returned an untracked path outside the repository: ${relativePath}`);
+				}
+				hash.update(relativePath);
+				hash.update('\0');
+				for await (const chunk of createReadStream(filePath)) {
+					hash.update(chunk);
+				}
+				hash.update('\0');
+			}
+		}
+
+		return hash.digest('hex');
+	}
+
+	/** Stream Git's binary diff directly into a hash to avoid a fixed output limit. */
+	private static async hashGitDiff(repoRoot: string, args: string[], hash: ReturnType<typeof createHash>): Promise<void> {
+		await new Promise<void>((resolve, reject) => {
+			const child = spawn('git', args, { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+			let stderr = '';
+			child.stdout.on('data', (chunk: Buffer) => hash.update(chunk));
+			child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+			child.once('error', reject);
+			child.once('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`git ${args.join(' ')} failed with exit code ${code}: ${stderr.trim()}`));
+				}
+			});
+		});
 	}
 }

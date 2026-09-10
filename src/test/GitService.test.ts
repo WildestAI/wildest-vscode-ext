@@ -29,4 +29,22 @@ suite('GitService Test Suite', () => {
 			await fs.rm(repoRoot, { recursive: true, force: true });
 		}
 	});
+
+	test('fingerprints binary diffs larger than the previous exec buffer limit', async function () {
+		this.timeout(10_000);
+		const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wildest-git-service-'));
+		try {
+			execFileSync('git', ['init', '--quiet', repoRoot]);
+			const largeFile = path.join(repoRoot, 'large.txt');
+			await fs.writeFile(largeFile, 'baseline\n');
+			execFileSync('git', ['add', 'large.txt'], { cwd: repoRoot });
+			await fs.writeFile(largeFile, 'x'.repeat(21 * 1024 * 1024));
+
+			const fingerprint = await GitService.getDiffContentFingerprint(repoRoot, false);
+
+			assert.match(fingerprint, /^[a-f0-9]{64}$/);
+		} finally {
+			await fs.rm(repoRoot, { recursive: true, force: true });
+		}
+	});
 });

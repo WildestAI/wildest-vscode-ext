@@ -250,8 +250,18 @@ export class DiffService {
 				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
 				this.logOutput(cmdString, stdout, stderr);
 
-				// Cache the result
-				this._cache.set(repoRoot, stage, htmlFilePath, contentFingerprint);
+				// The worktree can change while the CLI renders. Cache only an artifact
+				// whose input still matches; the just-rendered view remains usable either way.
+				try {
+					const postRenderFingerprint = await GitService.getDiffContentFingerprint(repoRoot, stage === 'staged');
+					if (postRenderFingerprint === contentFingerprint) {
+						this._cache.set(repoRoot, stage, htmlFilePath, contentFingerprint);
+					} else {
+						this._outputChannel.appendLine(`Skipping ${stage} DiffGraph cache because the working tree changed during rendering`);
+					}
+				} catch (error) {
+					this._outputChannel.appendLine(`Skipping ${stage} DiffGraph cache because its post-render fingerprint could not be computed: ${String(error)}`);
+				}
 
 				// Show notification
 				this._notificationService.sendOperationComplete(

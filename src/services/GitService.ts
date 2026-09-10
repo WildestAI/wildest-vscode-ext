@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { createReadStream } from 'fs';
 import { createHash } from 'crypto';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { GitInfo } from '../utils/types';
 
@@ -142,14 +142,9 @@ export class GitService {
 		if (staged) {
 			args.push('--cached');
 		}
-		const { stdout } = await execFileAsync('git', args, {
-			cwd: repoRoot,
-			encoding: 'buffer',
-			maxBuffer: 20 * 1024 * 1024,
-		});
 		const hash = createHash('sha256');
 		hash.update(staged ? 'staged\0' : 'unstaged\0');
-		hash.update(stdout as Buffer);
+		await this.hashGitDiff(repoRoot, args, hash);
 
 		if (!staged) {
 			const { stdout: untracked } = await execFileAsync(
@@ -176,5 +171,23 @@ export class GitService {
 		}
 
 		return hash.digest('hex');
+	}
+
+	/** Stream Git's binary diff directly into a hash to avoid a fixed output limit. */
+	private static async hashGitDiff(repoRoot: string, args: string[], hash: ReturnType<typeof createHash>): Promise<void> {
+		await new Promise<void>((resolve, reject) => {
+			const child = spawn('git', args, { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+			let stderr = '';
+			child.stdout.on('data', (chunk: Buffer) => hash.update(chunk));
+			child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+			child.once('error', reject);
+			child.once('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`git ${args.join(' ')} failed with exit code ${code}: ${stderr.trim()}`));
+				}
+			});
+		});
 	}
 }

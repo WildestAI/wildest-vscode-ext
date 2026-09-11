@@ -97,6 +97,17 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.ok(timing.totalMs >= 0);
 	});
 
+	test('records cached graph first paint only after the webview acknowledges a rendered frame', async () => {
+		GitHistoryCache.update(repoRoot, [commit], ['* ']);
+
+		await (provider as any).loadGitHistory(false);
+		const cachePaintId = messages.find(message => message.type === 'commits').cachePaintId;
+		assert.strictEqual(provider.getLastPerformanceSnapshot().firstUsableGraphMs, undefined);
+
+		(provider as any).recordCachedGraphFirstPaint(cachePaintId);
+		assert.ok(provider.getLastPerformanceSnapshot().firstUsableGraphMs! >= 0);
+	});
+
 	test('records repository discovery timing when discovery fails', async () => {
 		GitService.getRepositories = async () => {
 			await new Promise<void>(resolve => setTimeout(resolve, 5));

@@ -33,6 +33,12 @@ window.addEventListener('message', e => {
 			updateState(e.data);
 			vscode.setState(state);
 			renderList(state.commits, state.repoPath);
+			if (typeof e.data.cachePaintId === 'number') {
+				requestAnimationFrame(() => vscode.postMessage({
+					command: 'cachedGraphRendered',
+					cachePaintId: e.data.cachePaintId
+				}));
+			}
 			break;
 		case 'refreshing':
 			state.isRefreshing = e.data.state;

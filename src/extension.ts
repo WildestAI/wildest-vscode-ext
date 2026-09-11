@@ -22,6 +22,7 @@ import { GitService } from './services/GitService';
 import { CliService } from './services/CliService';
 import { AiProviderId, AiProviderProfile, AiProviderProfileService } from './services/AiProviderProfileService';
 import { redactDiagnostics } from './utils/redactDiagnostics';
+import { evaluateWarmHistoryBudget } from './utils/historyPerformanceBudget';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -77,6 +78,11 @@ export function activate(context: vscode.ExtensionContext) {
 		historyPerformanceOutput.appendLine(`Git fetch: ${timing.gitFetchMs === undefined ? 'not run' : `${timing.gitFetchMs.toFixed(1)} ms`}`);
 		historyPerformanceOutput.appendLine(`Graph build: ${timing.graphBuildMs.toFixed(1)} ms`);
 		historyPerformanceOutput.appendLine(`Total: ${timing.totalMs.toFixed(1)} ms`);
+		const warmHistoryBudget = evaluateWarmHistoryBudget(timing);
+		const warmHistoryResult = warmHistoryBudget.status === 'not-measured'
+			? 'not measured (last load was not cache-backed)'
+			: `${warmHistoryBudget.status} (${warmHistoryBudget.measuredMs!.toFixed(1)} ms)`;
+		historyPerformanceOutput.appendLine(`Warm history budget (<${warmHistoryBudget.budgetMs} ms): ${warmHistoryResult}`);
 		historyPerformanceOutput.appendLine('This report stays local and contains no repository paths, commits, or telemetry.');
 		historyPerformanceOutput.show(true);
 	}));

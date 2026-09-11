@@ -11,6 +11,8 @@ export interface HistoryPerformanceSnapshot {
 	cacheLookupMs: number;
 	gitFetchMs: number | undefined;
 	graphBuildMs: number;
+	/** Elapsed time until the cached graph is posted to the webview, when available. */
+	firstUsableGraphMs: number | undefined;
 	totalMs: number;
 }
 
@@ -22,7 +24,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _activeForceRefresh = false;
 	private _pendingForceRefresh = false;
 	private _lastPerformanceSnapshot: HistoryPerformanceSnapshot = {
-		source: 'none', repositoryDiscoveryMs: 0, cacheLookupMs: 0, gitFetchMs: undefined, graphBuildMs: 0, totalMs: 0,
+		source: 'none', repositoryDiscoveryMs: 0, cacheLookupMs: 0, gitFetchMs: undefined, graphBuildMs: 0, firstUsableGraphMs: undefined, totalMs: 0,
 	};
 
 	constructor(
@@ -112,6 +114,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		let cacheLookupMs = 0;
 		let gitFetchMs: number | undefined;
 		let graphBuildMs = 0;
+		let firstUsableGraphMs: number | undefined;
 		let source: HistoryPerformanceSnapshot['source'] = 'none';
 
 		// Show loading state immediately at the start
@@ -157,6 +160,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					repoName
 				});
 				hasUsableHistory = true;
+				firstUsableGraphMs = performance.now() - startedAt;
 				source = 'cache';
 				if (!forceRefresh) {
 					return;
@@ -203,6 +207,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				cacheLookupMs,
 				gitFetchMs,
 				graphBuildMs,
+				firstUsableGraphMs,
 				totalMs: performance.now() - startedAt,
 			};
 			// Ensure loading state is turned off in case of unexpected errors

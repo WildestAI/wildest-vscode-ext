@@ -11,6 +11,8 @@ export interface HistoryPerformanceSnapshot {
 	cacheLookupMs: number;
 	gitFetchMs: number | undefined;
 	graphBuildMs: number;
+	/** Elapsed time until the cached graph has rendered in the webview, when available. */
+	firstUsableGraphMs: number | undefined;
 	totalMs: number;
 }
 
@@ -21,8 +23,12 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _refreshPromise?: Promise<void>;
 	private _activeForceRefresh = false;
 	private _pendingForceRefresh = false;
+	private _nextCachedGraphPaintId = 0;
+	private _nextHistoryLoadId = 0;
+	private _lastCompletedPerformanceSnapshotLoadId = 0;
+	private readonly _cachedGraphPaints = new Map<number, { loadId: number; startedAt: number; measuredMs?: number }>();
 	private _lastPerformanceSnapshot: HistoryPerformanceSnapshot = {
-		source: 'none', repositoryDiscoveryMs: 0, cacheLookupMs: 0, gitFetchMs: undefined, graphBuildMs: 0, totalMs: 0,
+		source: 'none', repositoryDiscoveryMs: 0, cacheLookupMs: 0, gitFetchMs: undefined, graphBuildMs: 0, firstUsableGraphMs: undefined, totalMs: 0,
 	};
 
 	constructor(
@@ -51,6 +57,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				await this._onCommitClicked(message.commitHash, message.repoPath);
 			} else if (message.command === 'refresh') {
 				await this.refresh(true);
+			} else if (message.command === 'cachedGraphRendered' && typeof message.cachePaintId === 'number') {
+				this.recordCachedGraphFirstPaint(message.cachePaintId);
 			}
 		});
 
@@ -107,11 +115,13 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		if (!this._view) {
 			return;
 		}
+		const loadId = ++this._nextHistoryLoadId;
 		const startedAt = performance.now();
 		let repositoryDiscoveryMs = 0;
 		let cacheLookupMs = 0;
 		let gitFetchMs: number | undefined;
 		let graphBuildMs = 0;
+		let firstUsableGraphMs: number | undefined;
 		let source: HistoryPerformanceSnapshot['source'] = 'none';
 
 		// Show loading state immediately at the start
@@ -146,6 +156,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				const graphBuildStartedAt = performance.now();
 				const graphData = this.buildGraphData(cached.commits, cached.graphLines);
 				graphBuildMs += performance.now() - graphBuildStartedAt;
+				const cachePaintId = ++this._nextCachedGraphPaintId;
+				this._cachedGraphPaints.set(cachePaintId, { loadId, startedAt });
 				this._view.webview.postMessage({
 					type: 'commits',
 					commits: graphData.map(node => ({
@@ -154,7 +166,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					})),
 					graphLines: cached.graphLines,
 					repoPath: repoRoot,
-					repoName
+					repoName,
+					cachePaintId,
 				});
 				hasUsableHistory = true;
 				source = 'cache';
@@ -197,17 +210,48 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				throw error;
 			}
 		} finally {
+			const renderedCachePaint = [...this._cachedGraphPaints.entries()]
+				.find(([, paint]) => paint.loadId === loadId && paint.measuredMs !== undefined);
+			if (renderedCachePaint) {
+				firstUsableGraphMs = renderedCachePaint[1].measuredMs;
+				this._cachedGraphPaints.delete(renderedCachePaint[0]);
+			}
 			this._lastPerformanceSnapshot = {
 				source,
 				repositoryDiscoveryMs,
 				cacheLookupMs,
 				gitFetchMs,
 				graphBuildMs,
+				firstUsableGraphMs,
 				totalMs: performance.now() - startedAt,
 			};
+			this._lastCompletedPerformanceSnapshotLoadId = loadId;
 			// Ensure loading state is turned off in case of unexpected errors
 			this._view.webview.postMessage({ type: 'loading', state: false });
 		}
+	}
+
+
+	private recordCachedGraphFirstPaint(cachePaintId: number): void {
+		const pendingPaint = this._cachedGraphPaints.get(cachePaintId);
+		if (!pendingPaint) {
+			return;
+		}
+
+		pendingPaint.measuredMs = performance.now() - pendingPaint.startedAt;
+		if (pendingPaint.loadId < this._lastCompletedPerformanceSnapshotLoadId) {
+			this._cachedGraphPaints.delete(cachePaintId);
+			return;
+		}
+		if (pendingPaint.loadId !== this._lastCompletedPerformanceSnapshotLoadId) {
+			return;
+		}
+
+		this._cachedGraphPaints.delete(cachePaintId);
+		this._lastPerformanceSnapshot = {
+			...this._lastPerformanceSnapshot,
+			firstUsableGraphMs: pendingPaint.measuredMs,
+		};
 	}
 
 	private async getGitCommits(repoPath: string): Promise<{ commits: GitCommit[], graphLines: string[] }> {

@@ -239,6 +239,10 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		pendingPaint.measuredMs = performance.now() - pendingPaint.startedAt;
+		if (pendingPaint.loadId < this._lastCompletedPerformanceSnapshotLoadId) {
+			this._cachedGraphPaints.delete(cachePaintId);
+			return;
+		}
 		if (pendingPaint.loadId !== this._lastCompletedPerformanceSnapshotLoadId) {
 			return;
 		}

@@ -108,6 +108,18 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.ok(provider.getLastPerformanceSnapshot().firstUsableGraphMs! >= 0);
 	});
 
+	test('discards a delayed acknowledgement from an older completed load', async () => {
+		GitHistoryCache.update(repoRoot, [commit], ['* ']);
+
+		await (provider as any).loadGitHistory(false);
+		const cachePaintId = messages.find(message => message.type === 'commits').cachePaintId;
+		await (provider as any).loadGitHistory(true);
+
+		(provider as any).recordCachedGraphFirstPaint(cachePaintId);
+		assert.strictEqual((provider as any)._cachedGraphPaints.has(cachePaintId), false);
+		assert.strictEqual(provider.getLastPerformanceSnapshot().firstUsableGraphMs, undefined);
+	});
+
 	test('records repository discovery timing when discovery fails', async () => {
 		GitService.getRepositories = async () => {
 			await new Promise<void>(resolve => setTimeout(resolve, 5));

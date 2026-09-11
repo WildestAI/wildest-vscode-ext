@@ -1,6 +1,7 @@
 // media/history/main.js
 /* global acquireVsCodeApi */
 const vscode = acquireVsCodeApi();
+let renderGeneration = 0;
 
 /**
  * This renderer uses a simplified version of VS Code's SCM "swimlane" algorithm.
@@ -29,17 +30,25 @@ window.addEventListener('message', e => {
 		case 'loading':
 			loadingOverlay.classList.toggle('visible', e.data.state);
 			break;
-		case 'commits':
+		case 'commits': {
+			const generation = ++renderGeneration;
 			updateState(e.data);
 			vscode.setState(state);
 			renderList(state.commits, state.repoPath);
 			if (typeof e.data.cachePaintId === 'number') {
-				requestAnimationFrame(() => vscode.postMessage({
-					command: 'cachedGraphRendered',
-					cachePaintId: e.data.cachePaintId
+				// The second frame runs after the first render opportunity. Ignore it if
+				// another graph replaced this one before it could become visible.
+				requestAnimationFrame(() => requestAnimationFrame(() => {
+					if (generation === renderGeneration) {
+						vscode.postMessage({
+							command: 'cachedGraphRendered',
+							cachePaintId: e.data.cachePaintId
+						});
+					}
 				}));
 			}
 			break;
+		}
 		case 'refreshing':
 			state.isRefreshing = e.data.state;
 			vscode.setState(state);

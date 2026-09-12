@@ -429,6 +429,24 @@ suite('CliService runtime diagnostics', () => {
 		assert.doesNotMatch(probe.detail, /secret|token/);
 	});
 
+	test('distinguishes a timed-out CLI health probe from an unavailable runtime', async () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+		});
+		const timeout = Object.assign(new Error('sensitive process output'), {
+			code: 'ETIMEDOUT',
+			killed: true,
+		});
+		const probe = await CliService.probeRuntime(diagnostics, async () => { throw timeout; });
+
+		assert.strictEqual(probe.status, 'timed-out');
+		assert.match(probe.detail, /timed out after 5 seconds/);
+		assert.doesNotMatch(probe.detail, /sensitive/);
+	});
+
 	test('classifies and redacts probe workspace cleanup failures', async () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'linux', architecture: 'x64', env: {},

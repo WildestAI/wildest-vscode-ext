@@ -7,7 +7,7 @@ import { CliCommand, CliOutput } from '../utils/types';
 import { DiffGraphContractError, validateDiffGraphArtifact } from '../utils/diffGraphV2';
 
 export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'invalid' | 'unsupported';
-export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable';
+export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable' | 'timed-out';
 
 export class CliCancelledError extends Error {
 	public constructor() {
@@ -207,13 +207,8 @@ export class CliService {
 					};
 				}
 			}
-		} catch {
-			result = {
-				status: 'unavailable',
-				cliVersion: 'unknown',
-				schemaSupport: 'not checked',
-				detail: 'The CLI health probe failed or timed out. Run the selected executable with --version and test wild diff --format json in a Git repository.',
-			};
+		} catch (error) {
+			result = this.probeFailureResult(error);
 		}
 
 		try {
@@ -223,7 +218,7 @@ export class CliService {
 				status: 'unavailable',
 				cliVersion: 'unknown',
 				schemaSupport: 'not checked',
-				detail: 'The CLI health probe failed or timed out. Run the selected executable with --version and test wild diff --format json in a Git repository.',
+				detail: 'The CLI health probe could not clean up its temporary workspace. Run the selected executable with --version and test wild diff --format json in a Git repository.',
 			};
 		}
 		return result;
@@ -439,6 +434,25 @@ export class CliService {
 				resolve({ stdout, stderr });
 			});
 		});
+
+	private static probeFailureResult(error: unknown): CliRuntimeProbe {
+		const timedOut = typeof error === 'object' && error !== null &&
+			((error as NodeJS.ErrnoException & { killed?: boolean }).killed === true ||
+				(error as NodeJS.ErrnoException).code === 'ETIMEDOUT');
+		return timedOut
+			? {
+				status: 'timed-out',
+				cliVersion: 'unknown',
+				schemaSupport: 'not checked',
+				detail: 'The CLI health probe timed out after 5 seconds. Check that the selected executable can run --version and wild diff --format json in a Git repository.',
+			}
+			: {
+				status: 'unavailable',
+				cliVersion: 'unknown',
+				schemaSupport: 'not checked',
+				detail: 'The CLI health probe failed. Run the selected executable with --version and test wild diff --format json in a Git repository.',
+			};
+	}
 
 	private static createProbeWorkspace: CliProbeWorkspaceFactory = async () => {
 		const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'wildestai-runtime-probe-'));

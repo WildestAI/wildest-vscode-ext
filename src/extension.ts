@@ -21,11 +21,50 @@ import { DiffService } from './services/DiffService';
 import { GitService } from './services/GitService';
 import { CliService } from './services/CliService';
 import { AiProviderId, AiProviderProfile, AiProviderProfileService } from './services/AiProviderProfileService';
+import { formatRuntimeDiagnosticsReport } from './utils/runtimeDiagnosticsReport';
 import { redactDiagnostics } from './utils/redactDiagnostics';
 import {
 	evaluateCachedGraphFirstPaintBudget,
 	evaluateWarmHistoryBudget,
 } from './utils/historyPerformanceBudget';
+
+async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): Promise<{
+	report: string;
+	cliStatus: string;
+	cliDetail: string;
+}> {
+	const diagnostics = CliService.inspectRuntime(context);
+	const probe = await CliService.probeRuntime(diagnostics);
+	let provider = 'disabled';
+	let providerModel: string | undefined;
+	let providerReadiness = 'needs-configuration';
+	let providerDetail = 'Invalid provider configuration.';
+
+	try {
+		const providerProfile = AiProviderProfileService.getProfile();
+		const readiness = await AiProviderProfileService.readiness(providerProfile, context.secrets);
+		provider = providerProfile.provider;
+		providerModel = providerProfile.model;
+		providerReadiness = readiness.status;
+		providerDetail = readiness.detail;
+	} catch (error) {
+		providerDetail = error instanceof Error ? error.message : providerDetail;
+	}
+
+	return {
+		report: formatRuntimeDiagnosticsReport({
+			extensionVersion: context.extension.packageJSON.version || 'unknown',
+			diagnostics,
+			probe,
+			provider,
+			providerModel,
+			providerReadiness,
+			providerDetail,
+		}),
+		cliStatus: diagnostics.status,
+		cliDetail: redactDiagnostics(diagnostics.detail),
+	};
+}
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -150,37 +189,19 @@ export function activate(context: vscode.ExtensionContext) {
 	const runtimeDiagnosticsOutput = vscode.window.createOutputChannel('WildestAI Diagnostics');
 	context.subscriptions.push(runtimeDiagnosticsOutput);
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', async () => {
-		const diagnostics = CliService.inspectRuntime(context);
-		const probe = await CliService.probeRuntime(diagnostics);
-		const extensionVersion = context.extension.packageJSON.version || 'unknown';
+		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
 		runtimeDiagnosticsOutput.clear();
-		runtimeDiagnosticsOutput.appendLine('WildestAI runtime diagnostics');
-		runtimeDiagnosticsOutput.appendLine(`Extension version: ${extensionVersion}`);
-		runtimeDiagnosticsOutput.appendLine(`CLI source: ${diagnostics.source}`);
-		runtimeDiagnosticsOutput.appendLine(`CLI status: ${diagnostics.status}`);
-		runtimeDiagnosticsOutput.appendLine(`Platform: ${diagnostics.platform}/${diagnostics.architecture}`);
-		runtimeDiagnosticsOutput.appendLine(`CLI path: ${diagnostics.executable || 'not available'}`);
-		runtimeDiagnosticsOutput.appendLine(`CLI version: ${probe.cliVersion}`);
-		runtimeDiagnosticsOutput.appendLine(`Artifact compatibility: ${probe.status}`);
-		runtimeDiagnosticsOutput.appendLine(`Schema support: ${probe.schemaSupport}`);
-		runtimeDiagnosticsOutput.appendLine(`Details: ${redactDiagnostics(diagnostics.detail)}`);
-		runtimeDiagnosticsOutput.appendLine(`Probe details: ${redactDiagnostics(probe.detail)}`);
-		try {
-			const providerProfile = AiProviderProfileService.getProfile();
-			const providerReadiness = await AiProviderProfileService.readiness(providerProfile, context.secrets);
-			runtimeDiagnosticsOutput.appendLine(`Provider: ${providerProfile.provider}`);
-			runtimeDiagnosticsOutput.appendLine(`Provider model: ${providerProfile.model || 'not applicable'}`);
-			runtimeDiagnosticsOutput.appendLine(`Provider readiness: ${providerReadiness.status}`);
-			runtimeDiagnosticsOutput.appendLine(`Provider details: ${redactDiagnostics(providerReadiness.detail)}`);
-		} catch (error) {
-			runtimeDiagnosticsOutput.appendLine(`Provider readiness: needs-configuration`);
-			runtimeDiagnosticsOutput.appendLine(`Provider details: ${redactDiagnostics(error instanceof Error ? error.message : 'Invalid provider configuration.')}`);
-		}
+		runtimeDiagnosticsOutput.appendLine(runtimeReport.report);
 		runtimeDiagnosticsOutput.show(true);
 
-		if (diagnostics.status !== 'ready') {
-			void vscode.window.showWarningMessage(`WildestAI CLI ${diagnostics.status}: ${redactDiagnostics(diagnostics.detail)}`);
+		if (runtimeReport.cliStatus !== 'ready') {
+			void vscode.window.showWarningMessage(`WildestAI CLI ${runtimeReport.cliStatus}: ${runtimeReport.cliDetail}`);
 		}
+	}));
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.copyRuntimeDiagnostics', async () => {
+		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
+		await vscode.env.clipboard.writeText(runtimeReport.report);
+		void vscode.window.showInformationMessage('Sanitized WildestAI runtime diagnostics copied to the clipboard.');
 	}));
 
 	// Register legacy commands for backwards compatibility

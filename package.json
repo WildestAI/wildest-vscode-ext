@@ -104,6 +104,11 @@
         "category": "Wildest AI"
       },
       {
+        "command": "wildestai.copyRuntimeDiagnostics",
+        "title": "Wildest AI: Copy Sanitized Runtime Diagnostics",
+        "category": "Wildest AI"
+      },
+      {
         "command": "wildestai.configureAiProvider",
         "title": "Wildest AI: Configure AI Provider",
         "category": "Wildest AI"

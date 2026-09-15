@@ -8,8 +8,29 @@ import * as vscode from 'vscode';
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
-	test('Sample test', () => {
-		assert.strictEqual(-1, [1, 2, 3].indexOf(5));
-		assert.strictEqual(-1, [1, 2, 3].indexOf(0));
+	test('copies the registered sanitized runtime diagnostics report', async () => {
+		const originalDevMode = process.env.WILDEST_DEV_MODE;
+		const originalVenvPath = process.env.WILDEST_VENV_PATH;
+		process.env.WILDEST_DEV_MODE = '1';
+		process.env.WILDEST_VENV_PATH = '/tmp/token=runtime-path-secret';
+
+		try {
+			await vscode.commands.executeCommand('wildestai.copyRuntimeDiagnostics');
+			const report = await vscode.env.clipboard.readText();
+			assert.match(report, /WildestAI runtime diagnostics/);
+			assert.match(report, /CLI path: \/tmp\/token=\[REDACTED\]/);
+			assert.ok(!report.includes('runtime-path-secret'));
+		} finally {
+			if (originalDevMode === undefined) {
+				delete process.env.WILDEST_DEV_MODE;
+			} else {
+				process.env.WILDEST_DEV_MODE = originalDevMode;
+			}
+			if (originalVenvPath === undefined) {
+				delete process.env.WILDEST_VENV_PATH;
+			} else {
+				process.env.WILDEST_VENV_PATH = originalVenvPath;
+			}
+		}
 	});
 });

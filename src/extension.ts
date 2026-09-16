@@ -153,7 +153,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		let profile: AiProviderProfile;
 		try {
-			const current = AiProviderProfileService.getProfile();
+			const current = AiProviderProfileService.getProfileOrDefault();
 			const baseUrl = provider === 'openai-compatible'
 				? await vscode.window.showInputBox({ prompt: 'OpenAI-compatible base URL', value: current.provider === provider ? current.baseUrl : undefined, ignoreFocusOut: true })
 				: undefined;

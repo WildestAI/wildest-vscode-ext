@@ -8,6 +8,17 @@ suite('AiProviderProfileService', () => {
 		});
 	});
 
+	test('recovers a disabled profile for the configuration picker when saved settings are invalid', () => {
+		const configuration = {
+			get: () => ({ provider: 'openai', apiKey: 'never-in-settings' }),
+		} as any;
+
+		assert.throws(() => AiProviderProfileService.getProfile(configuration), /Store API keys using SecretStorage/);
+		assert.deepStrictEqual(AiProviderProfileService.getProfileOrDefault(configuration), {
+			provider: 'disabled', capabilities: [], authSource: 'none',
+		});
+	});
+
 	test('normalizes a direct provider without accepting a key in settings', () => {
 		const profile = AiProviderProfileService.normalize({
 			provider: 'openai', model: 'gpt-4.1', capabilities: ['prose'], authSource: 'secret-storage',

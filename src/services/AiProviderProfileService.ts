@@ -109,6 +109,19 @@ export class AiProviderProfileService {
 		return this.normalize(configuration.get<unknown>(profileSetting));
 	}
 
+	/**
+	 * Use this only in recovery flows where an invalid user setting must not
+	 * prevent the user from opening the provider picker and replacing it.
+	 * Diagnostics continue to use getProfile so they can report invalid settings.
+	 */
+	public static getProfileOrDefault(configuration = vscode.workspace.getConfiguration('wildestai')): AiProviderProfile {
+		try {
+			return this.getProfile(configuration);
+		} catch {
+			return { provider: 'disabled', ...defaults.disabled };
+		}
+	}
+
 	public static secretKey(provider: Exclude<AiProviderId, 'disabled'>): string {
 		return `${secretPrefix}${provider}`;
 	}

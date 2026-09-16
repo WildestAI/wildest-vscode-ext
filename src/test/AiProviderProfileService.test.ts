@@ -50,7 +50,11 @@ suite('AiProviderProfileService', () => {
 				provider: 'openai-compatible', baseUrl, model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',
 			}), /baseUrl must be an http\(s\) URL/);
 		}
-		for (const baseUrl of ['http://127.0.0.1:11434/v1', 'https://gateway.example.com/v1?api-version=2024-01-01']) {
+		for (const baseUrl of [
+			'http://127.0.0.1:11434/v1',
+			'https://gateway.example.com/v1?api-version=2024-01-01',
+			'https://gateway.example.com/v1?tokenizer=cl100k_base',
+		]) {
 			const profile = AiProviderProfileService.normalize({
 				provider: 'openai-compatible', baseUrl, model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',
 			});

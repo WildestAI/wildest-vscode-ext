@@ -78,7 +78,7 @@ export class AiProviderProfileService {
 					|| parsedBaseUrl.username
 					|| parsedBaseUrl.password
 					|| parsedBaseUrl.hash
-					|| [...parsedBaseUrl.searchParams.keys()].some(key => /(?:api[_-]?key|token|secret|password|authorization|access[_-]?key)/i.test(key))
+					|| [...parsedBaseUrl.searchParams.keys()].some(key => /^(?:api[_-]?key|(?:access[_-]?)?token|secret|password|authorization|access[_-]?key)$/i.test(key))
 				) {
 					throw new Error('unsupported URL or credential-bearing parameter');
 				}

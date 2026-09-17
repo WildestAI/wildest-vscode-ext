@@ -77,8 +77,10 @@ export class AiProviderProfileService {
 					|| parsedBaseUrl.hostname === '.'
 					|| parsedBaseUrl.username
 					|| parsedBaseUrl.password
+					|| parsedBaseUrl.hash
+					|| [...parsedBaseUrl.searchParams.keys()].some(key => /^(?:api[_-]?key|(?:access[_-]?)?token|secret|password|authorization|access[_-]?key)$/i.test(key))
 				) {
-					throw new Error('unsupported protocol or missing host');
+					throw new Error('unsupported URL or credential-bearing parameter');
 				}
 			} catch {
 				throw new Error('WildestAI AI provider baseUrl must be an http(s) URL.');

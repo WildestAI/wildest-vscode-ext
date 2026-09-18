@@ -4,6 +4,7 @@ import { GitService } from '../services/GitService';
 import { CliService } from '../services/CliService';
 import { GitCommit, GitGraphNode, CliCommand } from '../utils/types';
 import { GitHistoryCache } from '../services/GitHistoryCache';
+import { CliCancelledError } from '../services/CliService';
 
 export interface HistoryPerformanceSnapshot {
 	source: 'cache' | 'git' | 'none';
@@ -21,6 +22,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
 	private _currentRepoRoot?: string;
 	private _refreshPromise?: Promise<void>;
+	private _refreshCancellation?: vscode.CancellationTokenSource;
 	private _activeForceRefresh = false;
 	private _pendingForceRefresh = false;
 	private _nextCachedGraphPaintId = 0;
@@ -62,7 +64,20 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			}
 		});
 
+		const cancellationSubscription = _token.onCancellationRequested(() => this.cancelRefresh());
+		webviewView.onDidDispose(() => cancellationSubscription.dispose());
+		webviewView.onDidChangeVisibility(() => {
+			if (!webviewView.visible) {
+				this.cancelRefresh();
+			}
+		});
+
 		void this.refresh(false);
+	}
+
+	/** Cancel in-flight history work that can no longer update the visible view. */
+	public cancelRefresh(): void {
+		this._refreshCancellation?.cancel();
 	}
 
 	public async refresh(forceRefresh = true): Promise<void> {
@@ -76,10 +91,16 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		this._activeForceRefresh = forceRefresh;
-		this._refreshPromise = this.runRefreshes(forceRefresh);
+		const cancellation = new vscode.CancellationTokenSource();
+		this._refreshCancellation = cancellation;
+		this._refreshPromise = this.runRefreshes(forceRefresh, cancellation.token);
 		try {
 			await this._refreshPromise;
 		} finally {
+			if (this._refreshCancellation === cancellation) {
+				this._refreshCancellation = undefined;
+			}
+			cancellation.dispose();
 			this._refreshPromise = undefined;
 			this._activeForceRefresh = false;
 		}
@@ -93,13 +114,19 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		return { ...this._lastPerformanceSnapshot };
 	}
 
-	private async runRefreshes(forceRefresh: boolean): Promise<void> {
+	private async runRefreshes(forceRefresh: boolean, cancellationToken: vscode.CancellationToken): Promise<void> {
 		do {
+			if (cancellationToken.isCancellationRequested) {
+				return;
+			}
 			this._pendingForceRefresh = false;
 			this._activeForceRefresh = forceRefresh;
 			try {
-				await this.loadGitHistory(forceRefresh);
+				await this.loadGitHistory(forceRefresh, cancellationToken);
 			} catch (error) {
+				if (error instanceof CliCancelledError) {
+					return;
+				}
 				if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
 					// If we hit a timeout, schedule another refresh attempt.
 					setTimeout(() => void this.refresh(forceRefresh), 2000);
@@ -111,8 +138,11 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		} while (forceRefresh);
 	}
 
-	private async loadGitHistory(forceRefresh: boolean): Promise<void> {
+	private async loadGitHistory(forceRefresh: boolean, cancellationToken?: vscode.CancellationToken): Promise<void> {
 		if (!this._view) {
+			return;
+		}
+		if (cancellationToken?.isCancellationRequested) {
 			return;
 		}
 		const loadId = ++this._nextHistoryLoadId;
@@ -179,7 +209,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			const gitFetchStartedAt = performance.now();
 			const { commits, graphLines } = await (async () => {
 				try {
-					return await this.getGitCommits(repoRoot);
+					return await this.getGitCommits(repoRoot, cancellationToken);
 				} finally {
 					gitFetchMs = performance.now() - gitFetchStartedAt;
 				}
@@ -200,6 +230,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			});
 			source = 'git';
 		} catch (error: any) {
+			if (error instanceof CliCancelledError) {
+				throw error;
+			}
 			if (hasUsableHistory) {
 				void vscode.window.showWarningMessage('WildestAI could not refresh Git history. Showing the last cached result.');
 			} else {
@@ -254,12 +287,15 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		};
 	}
 
-	private async getGitCommits(repoPath: string): Promise<{ commits: GitCommit[], graphLines: string[] }> {
+	private async getGitCommits(
+		repoPath: string,
+		cancellationToken?: vscode.CancellationToken,
+	): Promise<{ commits: GitCommit[], graphLines: string[] }> {
 		try {
 			// Always fetch fresh data
 			const args = ['log', '--graph', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'];
 			const command = CliService.setupCommand(args, this._context);
-			const { stdout } = await CliService.execute(command, repoPath);
+			const { stdout } = await CliService.execute(command, repoPath, undefined, cancellationToken);
 			const result = this.parseGitGraphLog(stdout);
 
 			// Update cache with fresh data
@@ -267,6 +303,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 			return result;
 		} catch (error: any) {
+			if (error instanceof CliCancelledError) {
+				throw error;
+			}
 			throw new Error(`Failed to get git history: ${error.message}`);
 		}
 	}

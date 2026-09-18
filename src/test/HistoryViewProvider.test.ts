@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { HistoryViewProvider } from '../providers/HistoryViewProvider';
-import { CliService } from '../services/CliService';
+import { CliCancelledError, CliService } from '../services/CliService';
 import { GitHistoryCache } from '../services/GitHistoryCache';
 import { GitService } from '../services/GitService';
 import { GitCommit } from '../utils/types';
@@ -210,6 +210,26 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(executeCalls, 1);
 		resolveExecute?.();
 		await Promise.all([firstRefresh, secondRefresh]);
+	});
+
+	test('cancels stale history fetches without replacing the current view', async () => {
+		let cancellationObserved = false;
+		CliService.execute = async (_command, _repoPath, _progress, cancellationToken) =>
+			new Promise((_, reject) => {
+				cancellationToken?.onCancellationRequested(() => {
+					cancellationObserved = true;
+					reject(new CliCancelledError());
+				});
+			});
+
+		const refresh = provider.refresh(true);
+		await new Promise<void>(resolve => setImmediate(resolve));
+		provider.cancelRefresh();
+		await refresh;
+
+		assert.strictEqual(cancellationObserved, true);
+		assert.strictEqual(messages.some(message => message.type === 'error'), false);
+		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 0);
 	});
 
 	test('runs one fresh pass when a forced refresh arrives during a cache-only load', async () => {

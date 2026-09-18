@@ -232,6 +232,72 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 0);
 	});
 
+	test('restarts a cancelled initial load once the visible view is idle', async () => {
+		const view = (provider as any)._view;
+		view.visible = true;
+		CliService.execute = async (_command, _repoPath, _progress, cancellationToken) => {
+			executeCalls++;
+			if (executeCalls === 1) {
+				return new Promise((_, reject) => {
+					cancellationToken?.onCancellationRequested(() => reject(new CliCancelledError()));
+				});
+			}
+			return {
+				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
+				stderr: '',
+			};
+		};
+
+		const initialRefresh = provider.refresh(false);
+		await new Promise<void>(resolve => setImmediate(resolve));
+		provider.cancelRefresh();
+		(provider as any).refreshWhenVisible(view);
+		await initialRefresh;
+		await new Promise<void>(resolve => setImmediate(resolve));
+
+		assert.strictEqual(executeCalls, 2);
+		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 1);
+	});
+
+	test('does not let a completed old refresh update a replacement view', async () => {
+		let resolveExecute: (() => void) | undefined;
+		CliService.execute = async () => {
+			executeCalls++;
+			await new Promise<void>(resolve => { resolveExecute = resolve; });
+			return {
+				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
+				stderr: '',
+			};
+		};
+		const originalMessages: any[] = [];
+		const replacementMessages: any[] = [];
+		(provider as any)._view = {
+			webview: {
+				html: '',
+				postMessage: (message: any) => { originalMessages.push(message); return Promise.resolve(true); },
+				asWebviewUri: (uri: vscode.Uri) => uri,
+				cspSource: 'vscode-webview:',
+			},
+		};
+		const originalView = (provider as any)._view;
+		const refresh = provider.refresh(true);
+		await new Promise<void>(resolve => setImmediate(resolve));
+		(provider as any)._view = {
+			webview: {
+				html: '',
+				postMessage: (message: any) => { replacementMessages.push(message); return Promise.resolve(true); },
+				asWebviewUri: (uri: vscode.Uri) => uri,
+				cspSource: 'vscode-webview:',
+			},
+		};
+		resolveExecute?.();
+		await refresh;
+
+		assert.strictEqual(replacementMessages.length, 0);
+		assert.strictEqual(originalMessages.some(message => message.type === 'commits'), false);
+		assert.notStrictEqual((provider as any)._view, originalView);
+	});
+
 	test('runs one fresh pass when a forced refresh arrives during a cache-only load', async () => {
 		GitHistoryCache.update(repoRoot, [commit], ['* ']);
 

@@ -65,19 +65,44 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		});
 
 		const cancellationSubscription = _token.onCancellationRequested(() => this.cancelRefresh());
-		webviewView.onDidDispose(() => cancellationSubscription.dispose());
+		webviewView.onDidDispose(() => {
+			cancellationSubscription.dispose();
+			this.cancelRefresh();
+			if (this._view === webviewView) {
+				this._view = undefined;
+			}
+		});
 		webviewView.onDidChangeVisibility(() => {
 			if (!webviewView.visible) {
 				this.cancelRefresh();
+				return;
 			}
+			this.refreshWhenVisible(webviewView);
 		});
 
-		void this.refresh(false);
+		this.refreshWhenVisible(webviewView);
 	}
 
 	/** Cancel in-flight history work that can no longer update the visible view. */
 	public cancelRefresh(): void {
 		this._refreshCancellation?.cancel();
+	}
+
+	/** Start an initial load only after a cancelled load for an earlier view has settled. */
+	private refreshWhenVisible(webviewView: vscode.WebviewView): void {
+		const activeRefresh = this._refreshPromise;
+		if (activeRefresh) {
+			void activeRefresh.finally(() => {
+				if (this._view === webviewView && webviewView.visible) {
+					void this.refresh(false);
+				}
+			});
+			return;
+		}
+
+		if (this._view === webviewView && webviewView.visible) {
+			void this.refresh(false);
+		}
 	}
 
 	public async refresh(forceRefresh = true): Promise<void> {
@@ -139,7 +164,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async loadGitHistory(forceRefresh: boolean, cancellationToken?: vscode.CancellationToken): Promise<void> {
-		if (!this._view) {
+		const view = this._view;
+		if (!view) {
 			return;
 		}
 		if (cancellationToken?.isCancellationRequested) {
@@ -155,7 +181,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		let source: HistoryPerformanceSnapshot['source'] = 'none';
 
 		// Show loading state immediately at the start
-		this._view.webview.postMessage({ type: 'loading', state: true });
+		view.webview.postMessage({ type: 'loading', state: true });
 
 		let hasUsableHistory = false;
 		try {
@@ -167,8 +193,11 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					repositoryDiscoveryMs = performance.now() - repositoryDiscoveryStartedAt;
 				}
 			})();
+			if (this._view !== view || cancellationToken?.isCancellationRequested) {
+				return;
+			}
 			if (repositories.length === 0) {
-				this._view.webview.postMessage({ type: 'empty' });
+				view.webview.postMessage({ type: 'empty' });
 				return;
 			}
 
@@ -176,7 +205,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			const repoName = path.basename(repoRoot);
 
 			// Ensure HTML shell is set (idempotent)
-			this._view.webview.html = this.getHtmlForWebview(this._view.webview, repoName);
+			view.webview.html = this.getHtmlForWebview(view.webview, repoName);
 
 			// Check cache and show cached data immediately if available
 			const cacheLookupStartedAt = performance.now();
@@ -188,7 +217,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				graphBuildMs += performance.now() - graphBuildStartedAt;
 				const cachePaintId = ++this._nextCachedGraphPaintId;
 				this._cachedGraphPaints.set(cachePaintId, { loadId, startedAt });
-				this._view.webview.postMessage({
+				view.webview.postMessage({
 					type: 'commits',
 					commits: graphData.map(node => ({
 						...node.commit,
@@ -214,11 +243,14 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					gitFetchMs = performance.now() - gitFetchStartedAt;
 				}
 			})();
+			if (this._view !== view || cancellationToken?.isCancellationRequested) {
+				return;
+			}
 
 			const graphBuildStartedAt = performance.now();
 			const graphData = this.buildGraphData(commits, graphLines);
 			graphBuildMs += performance.now() - graphBuildStartedAt;
-			this._view.webview.postMessage({
+			view.webview.postMessage({
 				type: 'commits',
 				commits: graphData.map(node => ({
 					...node.commit,
@@ -233,10 +265,13 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			if (error instanceof CliCancelledError) {
 				throw error;
 			}
+			if (this._view !== view || cancellationToken?.isCancellationRequested) {
+				return;
+			}
 			if (hasUsableHistory) {
 				void vscode.window.showWarningMessage('WildestAI could not refresh Git history. Showing the last cached result.');
 			} else {
-				this._view.webview.postMessage({ type: 'error', message: error.message ?? String(error) });
+				view.webview.postMessage({ type: 'error', message: error.message ?? String(error) });
 			}
 
 			if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
@@ -249,18 +284,20 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				firstUsableGraphMs = renderedCachePaint[1].measuredMs;
 				this._cachedGraphPaints.delete(renderedCachePaint[0]);
 			}
-			this._lastPerformanceSnapshot = {
-				source,
-				repositoryDiscoveryMs,
-				cacheLookupMs,
-				gitFetchMs,
-				graphBuildMs,
-				firstUsableGraphMs,
-				totalMs: performance.now() - startedAt,
-			};
-			this._lastCompletedPerformanceSnapshotLoadId = loadId;
-			// Ensure loading state is turned off in case of unexpected errors
-			this._view.webview.postMessage({ type: 'loading', state: false });
+			if (this._view === view) {
+				this._lastPerformanceSnapshot = {
+					source,
+					repositoryDiscoveryMs,
+					cacheLookupMs,
+					gitFetchMs,
+					graphBuildMs,
+					firstUsableGraphMs,
+					totalMs: performance.now() - startedAt,
+				};
+				this._lastCompletedPerformanceSnapshotLoadId = loadId;
+				// Ensure loading state is turned off in case of unexpected errors.
+				view.webview.postMessage({ type: 'loading', state: false });
+			}
 		}
 	}
 

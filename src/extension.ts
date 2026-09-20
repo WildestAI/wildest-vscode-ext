@@ -141,6 +141,26 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 	context.subscriptions.push(helloDisposable);
 
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.disableAiProviderAndRemoveKey', async () => {
+		const profile = AiProviderProfileService.getProfileOrDefault();
+		if (profile.provider === 'disabled') {
+			void vscode.window.showInformationMessage('WildestAI optional AI prose is already disabled.');
+			return;
+		}
+		const confirmation = await vscode.window.showWarningMessage(
+			`Disable optional AI prose and remove the ${profile.provider} API key from VS Code SecretStorage? This cannot be undone.`,
+			{ modal: true },
+			'Disable and Remove Key',
+		);
+		if (confirmation !== 'Disable and Remove Key') { return; }
+		try {
+			await AiProviderProfileService.disableAndRemoveActiveKey(profile, context.secrets);
+			void vscode.window.showInformationMessage('WildestAI optional AI prose is disabled and the active provider key was removed. Deterministic workflows remain available.');
+		} catch (error) {
+			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to disable the AI provider and remove its key.');
+		}
+	}));
+
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.configureAiProvider', async () => {
 		const providerPick = await vscode.window.showQuickPick([
 			{ label: 'disabled' as AiProviderId, description: 'Keep deterministic Git and DiffGraph workflows AI-free' },

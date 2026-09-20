@@ -112,6 +112,11 @@
         "command": "wildestai.configureAiProvider",
         "title": "Wildest AI: Configure AI Provider",
         "category": "Wildest AI"
+      },
+      {
+        "command": "wildestai.disableAiProviderAndRemoveKey",
+        "title": "Wildest AI: Disable AI Provider and Remove Key",
+        "category": "Wildest AI"
       }
     ],
     "menus": {

@@ -154,4 +154,34 @@ export class AiProviderProfileService {
 		}
 		await configuration.update(profileSetting, normalized, vscode.ConfigurationTarget.Global);
 	}
+
+	/**
+	 * Disable optional AI prose enrichment and remove the active provider's key
+	 * from VS Code SecretStorage. The caller must obtain explicit user consent
+	 * because this deliberately makes that key unavailable for later reuse.
+	 */
+	public static async disableAndRemoveActiveKey(
+		profile: AiProviderProfile,
+		secrets: vscode.SecretStorage,
+		configuration = vscode.workspace.getConfiguration('wildestai'),
+	): Promise<void> {
+		const normalized = this.normalize(profile);
+		await configuration.update(profileSetting, { provider: 'disabled', ...defaults.disabled }, vscode.ConfigurationTarget.Global);
+		if (normalized.provider !== 'disabled') {
+			try {
+				await secrets.delete(this.secretKey(normalized.provider));
+			} catch (deletionError) {
+				try {
+					await configuration.update(profileSetting, normalized, vscode.ConfigurationTarget.Global);
+				} catch (rollbackError) {
+					const deletionDetail = deletionError instanceof Error ? deletionError.message : String(deletionError);
+					const rollbackDetail = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+					throw new Error(
+						`Could not remove the ${normalized.provider} key: ${deletionDetail}. The provider profile could not be restored: ${rollbackDetail}. The key may still be stored; configure ${normalized.provider} again, then retry disabling AI.`,
+					);
+				}
+				throw deletionError;
+			}
+		}
+	}
 }

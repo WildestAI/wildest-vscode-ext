@@ -74,6 +74,87 @@ suite('AiProviderProfileService', () => {
 		assert.deepStrictEqual(events, ['store', 'update']);
 	});
 
+	test('disables optional AI and removes only the active provider key', async () => {
+		const events: string[] = [];
+		const secrets = { delete: async (key: string) => { events.push(`delete:${key}`); } } as any;
+		const configuration = { update: async (key: string, value: unknown) => { events.push(`update:${key}:${JSON.stringify(value)}`); } } as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+
+		await AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration);
+
+		assert.deepStrictEqual(events, [
+			'update:ai.providerProfile:{"provider":"disabled","capabilities":[],"authSource":"none"}',
+			'delete:wildestai.ai.provider-key.openai-compatible',
+		]);
+	});
+
+	test('retains the active key when disabling cannot be persisted', async () => {
+		let deleted = false;
+		const secrets = { delete: async () => { deleted = true; } } as any;
+		const configuration = { update: async () => { throw new Error('Settings write failed'); } } as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+
+		await assert.rejects(
+			AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration),
+			/Settings write failed/,
+		);
+		assert.strictEqual(deleted, false);
+	});
+
+	test('restores the active profile when credential removal fails', async () => {
+		const events: string[] = [];
+		const secrets = { delete: async () => { events.push('delete'); throw new Error('SecretStorage unavailable'); } } as any;
+		const configuration = { update: async (key: string, value: unknown) => { events.push(`update:${key}:${JSON.stringify(value)}`); } } as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', model: 'gpt-4.1', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+
+		await assert.rejects(
+			AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration),
+			/SecretStorage unavailable/,
+		);
+		assert.deepStrictEqual(events, [
+			'update:ai.providerProfile:{"provider":"disabled","capabilities":[],"authSource":"none"}',
+			'delete',
+			'update:ai.providerProfile:{"provider":"openai","baseUrl":"https://api.openai.com/v1","model":"gpt-4.1","capabilities":["prose"],"authSource":"secret-storage"}',
+		]);
+	});
+
+	test('preserves deletion failure and recovery guidance when profile restoration also fails', async () => {
+		const secrets = { delete: async () => { throw new Error('SecretStorage unavailable'); } } as any;
+		const configuration = {
+			update: async (_key: string, value: { provider: string }) => {
+				if (value.provider === 'openai') {
+					throw new Error('Settings write unavailable');
+				}
+			},
+		} as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', model: 'gpt-4.1', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+
+		await assert.rejects(
+			AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration),
+			/Could not remove the openai key: SecretStorage unavailable\. The provider profile could not be restored: Settings write unavailable\. The key may still be stored; configure openai again, then retry disabling AI\./,
+		);
+	});
+
+	test('disabling an already-disabled profile does not delete any credential', async () => {
+		const events: string[] = [];
+		const secrets = { delete: async () => { events.push('delete'); } } as any;
+		const configuration = { update: async () => { events.push('update'); } } as any;
+
+		await AiProviderProfileService.disableAndRemoveActiveKey(
+			AiProviderProfileService.normalize(undefined), secrets, configuration,
+		);
+
+		assert.deepStrictEqual(events, ['update']);
+	});
+
 	test('does not publish an enabled profile without a stored credential', async () => {
 		let updated = false;
 		const secrets = { store: async () => { throw new Error('SecretStorage unavailable'); } } as any;

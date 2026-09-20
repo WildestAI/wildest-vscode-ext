@@ -105,6 +105,25 @@ suite('AiProviderProfileService', () => {
 		assert.strictEqual(deleted, false);
 	});
 
+	test('restores the active profile when credential removal fails', async () => {
+		const events: string[] = [];
+		const secrets = { delete: async () => { events.push('delete'); throw new Error('SecretStorage unavailable'); } } as any;
+		const configuration = { update: async (key: string, value: unknown) => { events.push(`update:${key}:${JSON.stringify(value)}`); } } as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', model: 'gpt-4.1', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+
+		await assert.rejects(
+			AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration),
+			/SecretStorage unavailable/,
+		);
+		assert.deepStrictEqual(events, [
+			'update:ai.providerProfile:{"provider":"disabled","capabilities":[],"authSource":"none"}',
+			'delete',
+			'update:ai.providerProfile:{"provider":"openai","baseUrl":"https://api.openai.com/v1","model":"gpt-4.1","capabilities":["prose"],"authSource":"secret-storage"}',
+		]);
+	});
+
 	test('disabling an already-disabled profile does not delete any credential', async () => {
 		const events: string[] = [];
 		const secrets = { delete: async () => { events.push('delete'); } } as any;

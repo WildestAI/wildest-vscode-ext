@@ -168,7 +168,12 @@ export class AiProviderProfileService {
 		const normalized = this.normalize(profile);
 		await configuration.update(profileSetting, { provider: 'disabled', ...defaults.disabled }, vscode.ConfigurationTarget.Global);
 		if (normalized.provider !== 'disabled') {
-			await secrets.delete(this.secretKey(normalized.provider));
+			try {
+				await secrets.delete(this.secretKey(normalized.provider));
+			} catch (error) {
+				await configuration.update(profileSetting, normalized, vscode.ConfigurationTarget.Global);
+				throw error;
+			}
 		}
 	}
 }

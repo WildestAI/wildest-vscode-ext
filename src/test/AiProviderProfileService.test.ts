@@ -85,9 +85,24 @@ suite('AiProviderProfileService', () => {
 		await AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration);
 
 		assert.deepStrictEqual(events, [
-			'delete:wildestai.ai.provider-key.openai-compatible',
 			'update:ai.providerProfile:{"provider":"disabled","capabilities":[],"authSource":"none"}',
+			'delete:wildestai.ai.provider-key.openai-compatible',
 		]);
+	});
+
+	test('retains the active key when disabling cannot be persisted', async () => {
+		let deleted = false;
+		const secrets = { delete: async () => { deleted = true; } } as any;
+		const configuration = { update: async () => { throw new Error('Settings write failed'); } } as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+
+		await assert.rejects(
+			AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration),
+			/Settings write failed/,
+		);
+		assert.strictEqual(deleted, false);
 	});
 
 	test('disabling an already-disabled profile does not delete any credential', async () => {

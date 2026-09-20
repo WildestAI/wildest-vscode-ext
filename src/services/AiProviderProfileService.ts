@@ -166,9 +166,9 @@ export class AiProviderProfileService {
 		configuration = vscode.workspace.getConfiguration('wildestai'),
 	): Promise<void> {
 		const normalized = this.normalize(profile);
+		await configuration.update(profileSetting, { provider: 'disabled', ...defaults.disabled }, vscode.ConfigurationTarget.Global);
 		if (normalized.provider !== 'disabled') {
 			await secrets.delete(this.secretKey(normalized.provider));
 		}
-		await configuration.update(profileSetting, { provider: 'disabled', ...defaults.disabled }, vscode.ConfigurationTarget.Global);
 	}
 }

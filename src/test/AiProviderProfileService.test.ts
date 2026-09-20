@@ -74,6 +74,34 @@ suite('AiProviderProfileService', () => {
 		assert.deepStrictEqual(events, ['store', 'update']);
 	});
 
+	test('disables optional AI and removes only the active provider key', async () => {
+		const events: string[] = [];
+		const secrets = { delete: async (key: string) => { events.push(`delete:${key}`); } } as any;
+		const configuration = { update: async (key: string, value: unknown) => { events.push(`update:${key}:${JSON.stringify(value)}`); } } as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+
+		await AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration);
+
+		assert.deepStrictEqual(events, [
+			'delete:wildestai.ai.provider-key.openai-compatible',
+			'update:ai.providerProfile:{"provider":"disabled","capabilities":[],"authSource":"none"}',
+		]);
+	});
+
+	test('disabling an already-disabled profile does not delete any credential', async () => {
+		const events: string[] = [];
+		const secrets = { delete: async () => { events.push('delete'); } } as any;
+		const configuration = { update: async () => { events.push('update'); } } as any;
+
+		await AiProviderProfileService.disableAndRemoveActiveKey(
+			AiProviderProfileService.normalize(undefined), secrets, configuration,
+		);
+
+		assert.deepStrictEqual(events, ['update']);
+	});
+
 	test('does not publish an enabled profile without a stored credential', async () => {
 		let updated = false;
 		const secrets = { store: async () => { throw new Error('SecretStorage unavailable'); } } as any;

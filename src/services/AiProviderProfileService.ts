@@ -170,9 +170,17 @@ export class AiProviderProfileService {
 		if (normalized.provider !== 'disabled') {
 			try {
 				await secrets.delete(this.secretKey(normalized.provider));
-			} catch (error) {
-				await configuration.update(profileSetting, normalized, vscode.ConfigurationTarget.Global);
-				throw error;
+			} catch (deletionError) {
+				try {
+					await configuration.update(profileSetting, normalized, vscode.ConfigurationTarget.Global);
+				} catch (rollbackError) {
+					const deletionDetail = deletionError instanceof Error ? deletionError.message : String(deletionError);
+					const rollbackDetail = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+					throw new Error(
+						`Could not remove the ${normalized.provider} key: ${deletionDetail}. The provider profile could not be restored: ${rollbackDetail}. The key may still be stored; configure ${normalized.provider} again, then retry disabling AI.`,
+					);
+				}
+				throw deletionError;
 			}
 		}
 	}

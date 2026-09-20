@@ -124,6 +124,25 @@ suite('AiProviderProfileService', () => {
 		]);
 	});
 
+	test('preserves deletion failure and recovery guidance when profile restoration also fails', async () => {
+		const secrets = { delete: async () => { throw new Error('SecretStorage unavailable'); } } as any;
+		const configuration = {
+			update: async (_key: string, value: { provider: string }) => {
+				if (value.provider === 'openai') {
+					throw new Error('Settings write unavailable');
+				}
+			},
+		} as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', model: 'gpt-4.1', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+
+		await assert.rejects(
+			AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration),
+			/Could not remove the openai key: SecretStorage unavailable\. The provider profile could not be restored: Settings write unavailable\. The key may still be stored; configure openai again, then retry disabling AI\./,
+		);
+	});
+
 	test('disabling an already-disabled profile does not delete any credential', async () => {
 		const events: string[] = [];
 		const secrets = { delete: async () => { events.push('delete'); } } as any;

@@ -1,0 +1,135 @@
+name: Prepare verified extension release handoff
+
+on:
+  repository_dispatch:
+    types:
+      - eligible-cli-release
+  workflow_dispatch:
+    inputs:
+      extension_version:
+        description: Stable extension semver to prepare (without v)
+        required: true
+        type: string
+      cli_release_tag:
+        description: Published immutable DiffGraph CLI tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: extension-release-handoff-${{ github.event.client_payload.extension_version || inputs.extension_version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Verify CLI release and open extension release PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve trusted handoff inputs
+        id: handoff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          MANUAL_EXTENSION_VERSION: ${{ inputs.extension_version }}
+          MANUAL_CLI_RELEASE_TAG: ${{ inputs.cli_release_tag }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+
+          const event = JSON.parse(readFileSync(process.env.EVENT_PATH, 'utf8'));
+          const isDispatch = process.env.EVENT_NAME === 'repository_dispatch';
+          const payload = isDispatch ? event.client_payload ?? {} : {};
+          if (isDispatch && payload.cli_repository !== 'WildestAI/DiffGraph-CLI') {
+            throw new Error('repository_dispatch must identify WildestAI/DiffGraph-CLI as cli_repository.');
+          }
+          const extensionVersion = isDispatch ? payload.extension_version : process.env.MANUAL_EXTENSION_VERSION;
+          const cliReleaseTag = isDispatch ? payload.cli_release_tag : process.env.MANUAL_CLI_RELEASE_TAG;
+          if (typeof extensionVersion !== 'string' || typeof cliReleaseTag !== 'string') {
+            throw new Error('The handoff must provide string extension_version and cli_release_tag values.');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `extension_version=${extensionVersion}\ncli_release_tag=${cliReleaseTag}\n`);
+          NODE
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Refuse malformed or non-incrementing release inputs
+        env:
+          EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
+          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+        run: node scripts/release/prepare-release-handoff.mjs --check "$EXTENSION_VERSION" "$CLI_RELEASE_TAG"
+      - name: Verify the requested CLI release is published and final
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+        run: |
+          metadata="$(gh release view "$CLI_RELEASE_TAG" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isPrerelease)"
+          node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease) process.exit(1)' "$metadata" "$CLI_RELEASE_TAG"
+      - name: Download and verify all locked CLI release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+        run: |
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          gh release download "$CLI_RELEASE_TAG" --repo "$CLI_REPOSITORY" --dir "$temp_dir"
+          node scripts/release/verify-cli-release.mjs "$temp_dir"
+      - name: Run release-contract regression tests
+        run: |
+          npm run test:release-contract
+          npm run test:release-handoff
+          npm run verify:release-input
+      - name: Refuse to replace an existing release candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
+        run: |
+          branch="release/extension-v${EXTENSION_VERSION}"
+          test -z "$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$branch" --json number --jq '.[].number')" || {
+            echo "An open release candidate already exists for $branch." >&2
+            exit 1
+          }
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "Release candidate branch $branch already exists." >&2
+            exit 1
+          fi
+      - name: Prepare the reviewable extension release candidate
+        env:
+          EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
+          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+        run: |
+          branch="release/extension-v${EXTENSION_VERSION}"
+          git switch -c "$branch"
+          node scripts/release/prepare-release-handoff.mjs "$EXTENSION_VERSION" "$CLI_RELEASE_TAG"
+          npm run verify:release-input
+          npm run package:preflight
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = $'package-lock.json\npackage.json\nrelease-inputs/diffgraph-cli.json'
+      - name: Commit and open the release candidate PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
+          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+        run: |
+          branch="release/extension-v${EXTENSION_VERSION}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json release-inputs/diffgraph-cli.json
+          git commit -m "chore(release): prepare v${EXTENSION_VERSION} for ${CLI_RELEASE_TAG}"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "HEAD:refs/heads/${branch}"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+            --title "chore(release): prepare v${EXTENSION_VERSION}" \
+            --body "Prepared from verified immutable CLI release \`${CLI_RELEASE_TAG}\`.\n\nThis PR does not tag or publish the extension. After review and merge, create \`v${EXTENSION_VERSION}\` to invoke the existing fail-closed tagged publisher."

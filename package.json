@@ -188,6 +188,7 @@
     "test:release-contract": "node --test scripts/release/release-contract.test.mjs",
     "test:release-handoff": "node --test scripts/release/prepare-release-handoff.test.mjs",
     "test:automatic-release-handoff": "node --test scripts/release/resolve-automatic-handoff.test.mjs",
+    "test:published-release": "node --test scripts/release/verify-published-release.test.mjs",
     "package:vsix": "vsce package --no-dependencies",
     "package:preflight": "node scripts/release/preflight-package.mjs",
     "publish:vscode": "vsce publish",

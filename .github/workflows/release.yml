@@ -38,8 +38,8 @@ jobs:
           CLI_REPOSITORY: WildestAI/DiffGraph-CLI
         run: |
           cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
-          metadata="$(gh release view "$cli_tag" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isPrerelease)"
-          node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease) process.exit(1)' "$metadata" "$cli_tag"
+          metadata="$(gh release view "$cli_tag" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isImmutable,isPrerelease)"
+          node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease || !release.isImmutable) process.exit(1)' "$metadata" "$cli_tag"
       - name: Download and verify all locked DiffGraph CLI release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,3 +75,7 @@ jobs:
           OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
           VERSION: ${{ github.ref_name }}
         run: npm run publish:openvsx -- "wildestai-${VERSION#v}.vsix" -p "$OPENVSX_TOKEN" --skip-duplicate
+      - name: Verify the public Marketplace and Open VSX release
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: node scripts/release/verify-published-release.mjs WildestAI wildest-vscode-ext "${VERSION#v}"

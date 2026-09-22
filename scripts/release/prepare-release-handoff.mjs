@@ -1,15 +1,18 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { IMMUTABLE_CLI_TAG_PATTERN, PENDING_RELEASE_TAG, validateContract } from './release-contract.mjs';
 
 const RELEASE_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
+/** Parses a stable release version into comparable numeric components. */
 function parseReleaseVersion(version) {
   const match = RELEASE_VERSION_PATTERN.exec(version);
   if (!match) throw new Error(`Extension version ${version} must be a stable x.y.z semver.`);
   return match.slice(1).map(Number);
 }
 
+/** Compares two stable extension release versions numerically. */
 function compareReleaseVersions(left, right) {
   const leftParts = parseReleaseVersion(left);
   const rightParts = parseReleaseVersion(right);
@@ -30,6 +33,7 @@ export function validateReleaseHandoff({ currentVersion, extensionVersion, cliRe
   }
 }
 
+/** Reads a JSON release-control file with an actionable path-specific error. */
 async function readJson(path) {
   try {
     return JSON.parse(await readFile(path, 'utf8'));
@@ -69,6 +73,7 @@ export async function prepareReleaseHandoff({ root = '.', extensionVersion, cliR
   return { previousVersion, extensionVersion, cliReleaseTag };
 }
 
+/** Parses the direct CLI invocation without accepting ambiguous input. */
 function parseArguments(args) {
   const check = args[0] === '--check';
   const offset = check ? 1 : 0;
@@ -79,7 +84,7 @@ function parseArguments(args) {
   return { check, extensionVersion, cliReleaseTag };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { check, extensionVersion, cliReleaseTag } = parseArguments(process.argv.slice(2));
   const result = await prepareReleaseHandoff({ extensionVersion, cliReleaseTag, write: !check });
   console.log(`${check ? 'Validated' : 'Prepared'} extension v${result.extensionVersion} for ${result.cliReleaseTag}.`);

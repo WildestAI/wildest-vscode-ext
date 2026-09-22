@@ -1,18 +1,17 @@
 name: Prepare verified extension release handoff
 
 on:
-  repository_dispatch:
-    types:
-      - eligible-cli-release
+  schedule:
+    - cron: '23 * * * *'
   workflow_dispatch:
     inputs:
       extension_version:
-        description: Stable extension semver to prepare (without v)
-        required: true
+        description: Optional stable extension semver to prepare (without v; requires cli_release_tag)
+        required: false
         type: string
       cli_release_tag:
-        description: Published immutable DiffGraph CLI tag
-        required: true
+        description: Optional published immutable DiffGraph CLI tag (derive both values automatically when blank)
+        required: false
         type: string
 
 permissions:
@@ -20,7 +19,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: extension-release-handoff-${{ github.event.client_payload.extension_version || inputs.extension_version }}
+  group: extension-release-handoff-main
   cancel-in-progress: false
 
 jobs:
@@ -28,46 +27,56 @@ jobs:
     name: Verify CLI release and open extension release PR
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve trusted handoff inputs
-        id: handoff
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_PATH: ${{ github.event_path }}
-          MANUAL_EXTENSION_VERSION: ${{ inputs.extension_version }}
-          MANUAL_CLI_RELEASE_TAG: ${{ inputs.cli_release_tag }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFileSync, appendFileSync } from 'node:fs';
-
-          const event = JSON.parse(readFileSync(process.env.EVENT_PATH, 'utf8'));
-          const isDispatch = process.env.EVENT_NAME === 'repository_dispatch';
-          const payload = isDispatch ? event.client_payload ?? {} : {};
-          if (isDispatch && payload.cli_repository !== 'WildestAI/DiffGraph-CLI') {
-            throw new Error('repository_dispatch must identify WildestAI/DiffGraph-CLI as cli_repository.');
-          }
-          const extensionVersion = isDispatch ? payload.extension_version : process.env.MANUAL_EXTENSION_VERSION;
-          const cliReleaseTag = isDispatch ? payload.cli_release_tag : process.env.MANUAL_CLI_RELEASE_TAG;
-          if (typeof extensionVersion !== 'string' || typeof cliReleaseTag !== 'string') {
-            throw new Error('The handoff must provide string extension_version and cli_release_tag values.');
-          }
-          appendFileSync(process.env.GITHUB_OUTPUT, `extension_version=${extensionVersion}\ncli_release_tag=${cliReleaseTag}\n`);
-          NODE
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: false
+      - name: Resolve an automatic or explicitly requested handoff
+        id: handoff
+        env:
+          MANUAL_EXTENSION_VERSION: ${{ inputs.extension_version }}
+          MANUAL_CLI_RELEASE_TAG: ${{ inputs.cli_release_tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import { selectAutomaticHandoff } from './scripts/release/resolve-automatic-handoff.mjs';
+
+          const manualVersion = process.env.MANUAL_EXTENSION_VERSION;
+          const manualTag = process.env.MANUAL_CLI_RELEASE_TAG;
+          if (Boolean(manualVersion) !== Boolean(manualTag)) {
+            throw new Error('Provide both extension_version and cli_release_tag, or leave both blank for automatic discovery.');
+          }
+          let selected = manualVersion ? { extensionVersion: manualVersion, cliReleaseTag: manualTag } : undefined;
+          if (!selected) {
+            const currentVersion = JSON.parse(readFileSync('package.json', 'utf8')).version;
+            const releases = JSON.parse(execFileSync('gh', ['api', 'repos/WildestAI/DiffGraph-CLI/releases?per_page=100'], { encoding: 'utf8' }));
+            selected = selectAutomaticHandoff(releases, currentVersion);
+          }
+          if (!selected) {
+            appendFileSync(process.env.GITHUB_OUTPUT, 'skip=true\n');
+            console.log('No newer final immutable CLI release requires an extension handoff.');
+          } else {
+            appendFileSync(process.env.GITHUB_OUTPUT, `skip=false\nextension_version=${selected.extensionVersion}\ncli_release_tag=${selected.cliReleaseTag}\n`);
+          }
+          NODE
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.handoff.outputs.skip != 'true'
         with:
           node-version: 20
           cache: npm
       - run: npm ci
+        if: steps.handoff.outputs.skip != 'true'
       - name: Refuse malformed or non-incrementing release inputs
+        if: steps.handoff.outputs.skip != 'true'
         env:
           EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
           CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
         run: node scripts/release/prepare-release-handoff.mjs --check "$EXTENSION_VERSION" "$CLI_RELEASE_TAG"
       - name: Verify the requested CLI release is published and final
+        if: steps.handoff.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
@@ -76,6 +85,7 @@ jobs:
           metadata="$(gh release view "$CLI_RELEASE_TAG" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isPrerelease)"
           node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease) process.exit(1)' "$metadata" "$CLI_RELEASE_TAG"
       - name: Download and verify all locked CLI release assets
+        if: steps.handoff.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
@@ -86,11 +96,14 @@ jobs:
           gh release download "$CLI_RELEASE_TAG" --repo "$CLI_REPOSITORY" --dir "$temp_dir"
           node scripts/release/verify-cli-release.mjs "$temp_dir"
       - name: Run release-contract regression tests
+        if: steps.handoff.outputs.skip != 'true'
         run: |
           npm run test:release-contract
           npm run test:release-handoff
+          npm run test:automatic-release-handoff
           npm run verify:release-input
       - name: Refuse to replace an existing release candidate
+        if: steps.handoff.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
@@ -105,6 +118,7 @@ jobs:
             exit 1
           fi
       - name: Prepare the reviewable extension release candidate
+        if: steps.handoff.outputs.skip != 'true'
         env:
           EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
           CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
@@ -118,6 +132,7 @@ jobs:
           changed="$(git diff --name-only)"
           test "$changed" = $'package-lock.json\npackage.json\nrelease-inputs/diffgraph-cli.json'
       - name: Commit and open the release candidate PR
+        if: steps.handoff.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}

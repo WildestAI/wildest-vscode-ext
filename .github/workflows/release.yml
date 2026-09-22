@@ -4,12 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact existing v<semver> tag to verify and publish
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: extension-release-${{ github.ref_name }}
+  group: extension-release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -19,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
           persist-credentials: false
           fetch-depth: 1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -28,7 +35,7 @@ jobs:
       - run: npm ci
       - name: Refuse a version or unresolved CLI release-input mismatch
         env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_NAME: ${{ inputs.release_tag || github.ref_name }}
         run: node scripts/release/verify-tag.mjs
       - name: Run extension tests before downloading release inputs
         run: xvfb-run -a npm test
@@ -54,7 +61,7 @@ jobs:
           chmod +x bin/wild-macos-arm64 bin/wild-macos-x64 bin/wild-linux-arm64 bin/wild-linux-x64
       - name: Build and package the verified VSIX
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.release_tag || github.ref_name }}
         run: |
           npm run package
           npm run package:vsix -- --out "wildestai-${VERSION#v}.vsix"
@@ -68,14 +75,14 @@ jobs:
       - name: Publish the verified VSIX to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.WILDESTAI_AZURE_PUBLISH_PAT }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.release_tag || github.ref_name }}
         run: npm run publish:vscode -- --packagePath "wildestai-${VERSION#v}.vsix" --skip-duplicate
       - name: Publish the same verified VSIX to Open VSX
         env:
           OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.release_tag || github.ref_name }}
         run: npm run publish:openvsx -- "wildestai-${VERSION#v}.vsix" -p "$OPENVSX_TOKEN" --skip-duplicate
       - name: Verify the public Marketplace and Open VSX release
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.release_tag || github.ref_name }}
         run: node scripts/release/verify-published-release.mjs WildestAI wildest-vscode-ext "${VERSION#v}"

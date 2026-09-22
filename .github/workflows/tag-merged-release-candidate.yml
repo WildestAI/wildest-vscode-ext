@@ -8,6 +8,7 @@ on:
       - closed
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -77,15 +78,19 @@ jobs:
           if test -n "$existing"; then
             tagged_commit="$(printf '%s\n' "$existing" | awk '$2 ~ /\^\{\}$/ { print $1; found=1 } END { if (!found) print "" }')"
             test -n "$tagged_commit" || tagged_commit="$(printf '%s\n' "$existing" | head -n1 | cut -f1)"
-            test "$tagged_commit" = "$current_commit" && {
-              echo "${tag} already points to the verified merged candidate; skipping."
-              exit 0
-            }
-            echo "Refusing to overwrite existing ${tag} at ${tagged_commit}." >&2
-            exit 1
+            if test "$tagged_commit" = "$current_commit"; then
+              echo "${tag} already points to the verified merged candidate."
+            else
+              echo "Refusing to overwrite existing ${tag} at ${tagged_commit}." >&2
+              exit 1
+            fi
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$tag" -m "Release ${tag} from verified candidate #${{ github.event.pull_request.number }}"
+            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            git push origin "refs/tags/${tag}"
           fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git tag -a "$tag" -m "Release ${tag} from verified candidate #${{ github.event.pull_request.number }}"
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push origin "refs/tags/${tag}"
+          # A GITHUB_TOKEN-created tag does not emit a push-triggered workflow run.
+          # Dispatch the existing publisher explicitly against the immutable tag instead.
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f release_tag="$tag"

@@ -7,6 +7,7 @@ import { REQUIRED_ASSETS } from './release-contract.mjs';
 
 const MARKETPLACE_QUERY = 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery';
 const OPEN_VSX_BASE = 'https://open-vsx.org/api';
+const FETCH_TIMEOUT_MS = 30_000;
 const [publisher, extensionName, version] = process.argv.slice(2);
 
 /** Refuses an incomplete direct smoke-check invocation. */
@@ -15,26 +16,34 @@ function requireArgument(value, name) {
   return value;
 }
 
+/** Adds a bounded abort signal to every network operation in this release gate. */
+function timeoutRequest(options = {}) {
+  return { ...options, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) };
+}
+
 /** Returns the published VS Code Marketplace version list for one extension. */
 export async function marketplaceVersions(fetchImpl, extensionId) {
-  const response = await fetchImpl(MARKETPLACE_QUERY, {
+  const response = await fetchImpl(MARKETPLACE_QUERY, timeoutRequest({
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json;api-version=7.2-preview.1' },
     body: JSON.stringify({
       filters: [{ criteria: [{ filterType: 7, value: extensionId }] }],
       flags: 914,
     }),
-  });
+  }));
   if (!response.ok) throw new Error(`VS Code Marketplace query failed with HTTP ${response.status}.`);
   const payload = await response.json();
   const extension = payload.results?.[0]?.extensions?.find(item => `${item.publisher?.publisherName}.${item.extensionName}`.toLowerCase() === extensionId.toLowerCase());
   return extension?.versions?.map(item => item.version) ?? [];
 }
 
-/** Returns the latest published Open VSX version for one extension. */
-export async function openVsxVersion(fetchImpl, publisherName, name) {
-  const response = await fetchImpl(`${OPEN_VSX_BASE}/${encodeURIComponent(publisherName)}/${encodeURIComponent(name)}/latest`);
-  if (!response.ok) throw new Error(`Open VSX query failed with HTTP ${response.status}.`);
+/** Returns one specific published Open VSX version, avoiding cross-tag races. */
+export async function openVsxVersion(fetchImpl, publisherName, name, expectedVersion) {
+  const response = await fetchImpl(
+    `${OPEN_VSX_BASE}/${encodeURIComponent(publisherName)}/${encodeURIComponent(name)}/${encodeURIComponent(expectedVersion)}`,
+    timeoutRequest(),
+  );
+  if (!response.ok) throw new Error(`Open VSX query for ${expectedVersion} failed with HTTP ${response.status}.`);
   return (await response.json()).version;
 }
 
@@ -45,7 +54,7 @@ async function waitForPublishedVersion(fetchImpl, expectedVersion, attempts = 12
     try {
       const [marketplace, openVsx] = await Promise.all([
         marketplaceVersions(fetchImpl, `${publisher}.${extensionName}`),
-        openVsxVersion(fetchImpl, publisher, extensionName),
+        openVsxVersion(fetchImpl, publisher, extensionName, expectedVersion),
       ]);
       if (marketplace.includes(expectedVersion) && openVsx === expectedVersion) return;
       lastError = new Error(`Expected ${expectedVersion}; Marketplace has [${marketplace.join(', ')}], Open VSX has ${openVsx}.`);
@@ -60,7 +69,7 @@ async function waitForPublishedVersion(fetchImpl, expectedVersion, attempts = 12
 /** Downloads the public Marketplace VSIX and checks its required CLI paths. */
 async function verifyMarketplaceVsix(fetchImpl) {
   const url = `https://${publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/${publisher}/extension/${extensionName}/${version}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage`;
-  const response = await fetchImpl(url);
+  const response = await fetchImpl(url, timeoutRequest());
   if (!response.ok) throw new Error(`Marketplace VSIX download failed with HTTP ${response.status}.`);
   const directory = await mkdtemp(join(tmpdir(), 'wildest-published-vsix-'));
   const vsix = join(directory, 'extension.vsix');

@@ -1,0 +1,96 @@
+name: Tag merged verified extension release candidate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: extension-release-tag-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      startsWith(github.event.pull_request.head.ref, 'release/extension-v')
+    name: Reverify and tag merged release candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Refuse a PR whose candidate branch does not match its package version
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          version="$(node -e "console.log(require('./package.json').version)")"
+          test "$HEAD_REF" = "release/extension-v${version}"
+      - name: Validate the immutable CLI release input
+        run: |
+          npm run test:release-contract
+          npm run test:release-handoff
+          npm run verify:release-input
+      - name: Verify the requested CLI release is published and final
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+        run: |
+          cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
+          metadata="$(gh release view "$cli_tag" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isImmutable,isPrerelease)"
+          node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease || !release.isImmutable) process.exit(1)' "$metadata" "$cli_tag"
+      - name: Download and verify all locked CLI release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+        run: |
+          cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          gh release download "$cli_tag" --repo "$CLI_REPOSITORY" --dir "$temp_dir"
+          node scripts/release/verify-cli-release.mjs "$temp_dir"
+      - name: Build a clean-checkout release candidate VSIX
+        run: |
+          npm run package:preflight
+          git diff --check
+      - name: Create only the matching previously absent tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -e "console.log(require('./package.json').version)")"
+          tag="v${version}"
+          current_commit="$(git rev-parse HEAD)"
+          existing="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}")"
+          if test -n "$existing"; then
+            tagged_commit="$(printf '%s\n' "$existing" | awk '$2 ~ /\^\{\}$/ { print $1; found=1 } END { if (!found) print "" }')"
+            test -n "$tagged_commit" || tagged_commit="$(printf '%s\n' "$existing" | head -n1 | cut -f1)"
+            if test "$tagged_commit" = "$current_commit"; then
+              echo "${tag} already points to the verified merged candidate."
+            else
+              echo "Refusing to overwrite existing ${tag} at ${tagged_commit}." >&2
+              exit 1
+            fi
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$tag" -m "Release ${tag} from verified candidate #${{ github.event.pull_request.number }}"
+            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            git push origin "refs/tags/${tag}"
+          fi
+          # A GITHUB_TOKEN-created tag does not emit a push-triggered workflow run.
+          # Dispatch the existing publisher explicitly against the immutable tag instead.
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f release_tag="$tag"

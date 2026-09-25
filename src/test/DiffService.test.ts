@@ -15,7 +15,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { buildHtmlDiffArgs, buildJsonDiffArgs, DiffService } from '../services/DiffService';
+import { buildHtmlDiffArgs, buildJsonDiffArgs, DiffService, matchesRendererArtifact } from '../services/DiffService';
 import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
 
 suite('DiffService Test Suite', () => {
@@ -58,6 +58,13 @@ suite('DiffService Test Suite', () => {
 			buildJsonDiffArgs('/tmp/staged.json', { kind: 'working-tree', staged: true }),
 			['diff', '--format', 'json', '--output', '/tmp/staged.json', '--staged']
 		);
+	});
+
+	test('cached artifacts match only their active renderer mode', () => {
+		assert.strictEqual(matchesRendererArtifact('/tmp/diff.html', false), true);
+		assert.strictEqual(matchesRendererArtifact('/tmp/diff.json', true), true);
+		assert.strictEqual(matchesRendererArtifact('/tmp/diff.html', true), false);
+		assert.strictEqual(matchesRendererArtifact('/tmp/diff.json', false), false);
 	});
 
 	test('commit requests explicitly select HTML output without changing the range', () => {

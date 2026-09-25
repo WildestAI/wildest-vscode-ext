@@ -58,6 +58,11 @@ export function buildJsonDiffArgs(outputPath: string, target: HtmlDiffTarget): s
 	return args;
 }
 
+/** A cached artifact is reusable only when it matches the active renderer. */
+export function matchesRendererArtifact(artifactPath: string, useJsonRenderer: boolean): boolean {
+	return path.extname(artifactPath).toLowerCase() === (useJsonRenderer ? '.json' : '.html');
+}
+
 export class DiffService {
 	private _outputChannel: vscode.OutputChannel;
 	private _notificationService: NotificationService;
@@ -116,7 +121,7 @@ export class DiffService {
 
 			// Check cache first
 			const cachedEntry = this._cache.get(repoRoot, stage as any);
-			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath)) {
+			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath) && matchesRendererArtifact(cachedEntry.htmlPath, this.useJsonRenderer())) {
 				this._outputChannel.appendLine(`Using cached commit diff for ${commitHash}`);
 				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
 				return;
@@ -141,7 +146,7 @@ export class DiffService {
 
 			// Reuse only an artifact generated from the same immutable diff input.
 			const cachedEntry = this._cache.get(repoRoot, stage, contentFingerprint);
-			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath)) {
+			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath) && matchesRendererArtifact(cachedEntry.htmlPath, this.useJsonRenderer())) {
 				this._outputChannel.appendLine(`Using cached ${stage} diff for ${path.basename(repoRoot)}`);
 				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
 				return;

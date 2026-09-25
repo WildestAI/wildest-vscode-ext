@@ -148,6 +148,11 @@
     "configuration": {
       "title": "Wildest AI",
       "properties": {
+        "wildestai.experimental.jsonRenderer": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preview the validated DiffGraph v2 JSON renderer. The existing HTML renderer remains the default fallback while parity is verified."
+        },
         "wildestai.ai.providerProfile": {
           "type": "object",
           "default": {

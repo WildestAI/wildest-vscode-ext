@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { NotificationService } from '../services/NotificationService';
+import { DiffGraphV2 } from '../utils/diffGraphV2';
+import { renderDiffGraphV2 } from '../utils/renderDiffGraphV2';
 
 export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
@@ -33,6 +35,18 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			this._view.webview.html = htmlContent;
 			this._view.show?.(true);
 		}
+	}
+
+	/** Render a validated canonical artifact in the VS Code-owned webview shell. */
+	public async showDiffGraphArtifact(artifact: DiffGraphV2): Promise<void> {
+		if (this._view) {
+			this._view.webview.options = {
+				enableScripts: false,
+				localResourceRoots: [this._extensionUri]
+			};
+		}
+		this.update(renderDiffGraphV2(artifact));
+		this._hasUsableGraph = Boolean(this._view);
 	}
 
 

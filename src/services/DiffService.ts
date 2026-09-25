@@ -23,6 +23,7 @@ import { DiffGraphCache } from './DiffGraphCache';
 import { NotificationService } from './NotificationService';
 import { CliCommand } from '../utils/types';
 import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
+import { parseDiffGraphArtifact } from '../utils/diffGraphV2';
 
 export type HtmlDiffTarget =
 	| { kind: 'working-tree'; staged: boolean }
@@ -38,6 +39,19 @@ export function buildHtmlDiffArgs(outputPath: string, target: HtmlDiffTarget): s
 		args.push(`${target.commitHash}~1..${target.commitHash}`);
 	}
 	args.push('--format', 'html', '--output', outputPath, '--no-open');
+	if (target.kind === 'working-tree' && target.staged) {
+		args.push('--staged');
+	}
+	return args;
+}
+
+/** Request canonical JSON for the opt-in VS Code renderer. */
+export function buildJsonDiffArgs(outputPath: string, target: HtmlDiffTarget): string[] {
+	const args = ['diff'];
+	if (target.kind === 'commit') {
+		args.push(`${target.commitHash}~1..${target.commitHash}`);
+	}
+	args.push('--format', 'json', '--output', outputPath);
 	if (target.kind === 'working-tree' && target.staged) {
 		args.push('--staged');
 	}
@@ -161,6 +175,10 @@ export class DiffService {
 		}
 	}
 
+	private useJsonRenderer(): boolean {
+		return vscode.workspace.getConfiguration('wildestai.experimental').get<boolean>('jsonRenderer', false);
+	}
+
 	private showDiffError(error: unknown, operation: string): void {
 		if (error instanceof CliCancelledError) {
 			this._outputChannel.appendLine(`Cancelled ${operation}; keeping the current DiffGraph state.`);
@@ -188,10 +206,13 @@ export class DiffService {
 		}, async (progress, cancellationToken) => {
 			try {
 				// Build temp file path
-				const htmlFilePath = this.buildTempFilePath(repoRoot, `commit-${commitHash}`);
+				const useJsonRenderer = this.useJsonRenderer();
+				const outputPath = this.buildTempFilePath(repoRoot, `commit-${commitHash}`, useJsonRenderer ? 'json' : 'html');
 
-				// Call CLI via CliService with an explicit legacy HTML request and commit range
-				const args = buildHtmlDiffArgs(htmlFilePath, { kind: 'commit', commitHash });
+				// The JSON renderer is opt-in until parity with the HTML fallback is verified.
+				const args = useJsonRenderer
+					? buildJsonDiffArgs(outputPath, { kind: 'commit', commitHash })
+					: buildHtmlDiffArgs(outputPath, { kind: 'commit', commitHash });
 				const cliCommand = CliService.setupCommand(args, context);
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, cancellationToken);
 
@@ -200,7 +221,7 @@ export class DiffService {
 				this.logOutput(cmdString, stdout, stderr);
 
 				// Cache the result
-				this._cache.set(repoRoot, `commit-${commitHash}` as any, htmlFilePath);
+				this._cache.set(repoRoot, `commit-${commitHash}` as any, outputPath);
 
 				// Show notification
 				this._notificationService.sendOperationComplete(
@@ -210,7 +231,7 @@ export class DiffService {
 				);
 
 				// Show content
-				await this.showWebviewWithContent(htmlFilePath, `commit-${commitHash}`);
+				await this.showWebviewWithContent(outputPath, `commit-${commitHash}`);
 			} catch (error: any) {
 				throw error;
 			}
@@ -236,13 +257,14 @@ export class DiffService {
 		}, async (progress, cancellationToken) => {
 			try {
 				// Build temp file path
-				const htmlFilePath = this.buildTempFilePath(repoRoot, stage);
+				const useJsonRenderer = this.useJsonRenderer();
+				const outputPath = this.buildTempFilePath(repoRoot, stage, useJsonRenderer ? 'json' : 'html');
 
-				// Call CLI via CliService with an explicit legacy HTML request
-				const args = buildHtmlDiffArgs(htmlFilePath, {
-					kind: 'working-tree',
-					staged: stage === 'staged'
-				});
+				// JSON rendering remains opt-in while the legacy HTML path is the fallback.
+				const target = { kind: 'working-tree' as const, staged: stage === 'staged' };
+				const args = useJsonRenderer
+					? buildJsonDiffArgs(outputPath, target)
+					: buildHtmlDiffArgs(outputPath, target);
 				const cliCommand = CliService.setupCommand(args, context);
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, cancellationToken);
 
@@ -255,7 +277,7 @@ export class DiffService {
 				try {
 					const postRenderFingerprint = await GitService.getDiffContentFingerprint(repoRoot, stage === 'staged');
 					if (postRenderFingerprint === contentFingerprint) {
-						this._cache.set(repoRoot, stage, htmlFilePath, contentFingerprint);
+						this._cache.set(repoRoot, stage, outputPath, contentFingerprint);
 					} else {
 						this._outputChannel.appendLine(`Skipping ${stage} DiffGraph cache because the working tree changed during rendering`);
 					}
@@ -271,7 +293,7 @@ export class DiffService {
 				);
 
 				// Show content
-				await this.showWebviewWithContent(htmlFilePath, stage);
+				await this.showWebviewWithContent(outputPath, stage);
 			} catch (error: any) {
 				throw error;
 			}
@@ -281,10 +303,10 @@ export class DiffService {
 	/**
 	 * Builds a temporary file path for the HTML output
 	 */
-	private buildTempFilePath(repoRoot: string, stage: string): string {
+	private buildTempFilePath(repoRoot: string, stage: string, extension = 'html'): string {
 		const repoName = path.basename(repoRoot);
 		const timestamp = Date.now();
-		return path.join(os.tmpdir(), `wildest-${repoName}-${stage}-${timestamp}.html`);
+		return path.join(os.tmpdir(), `wildest-${repoName}-${stage}-${timestamp}.${extension}`);
 	}
 
 	/**
@@ -308,6 +330,11 @@ export class DiffService {
 		if (!fs.existsSync(htmlFilePath)) {
 			// show no changes HTML
 			await this._diffGraphViewProvider.showNoChangesScreen();
+			return;
+		}
+		if (path.extname(htmlFilePath) === '.json') {
+			const rawArtifact = await fs.promises.readFile(htmlFilePath, 'utf8');
+			await this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
 			return;
 		}
 		await this._diffGraphViewProvider.showDiffGraph(htmlFilePath);

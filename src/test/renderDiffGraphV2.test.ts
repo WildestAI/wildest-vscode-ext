@@ -24,6 +24,16 @@ suite('DiffGraph v2 webview renderer', () => {
 		assert.ok(!html.includes('<script'));
 	});
 
+	test('renders a symbol source location when no evidence is supplied', () => {
+		const artifact = structuredClone(fixture);
+		artifact.symbols[0].location = { file: 'src/<greeting>.py', line_start: 3, line_end: 5 };
+
+		const html = renderDiffGraphV2(artifact);
+
+		assert.match(html, /source location<\/strong> · src\/&lt;greeting&gt;\.py:3-5/);
+		assert.ok(!html.includes('No source evidence was supplied.'));
+	});
+
 	test('escapes artifact-controlled labels and snippets', () => {
 		const artifact = structuredClone(fixture);
 		artifact.relationships[0].label = '</article><img src=x onerror=alert(1)>';

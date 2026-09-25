@@ -12,15 +12,26 @@ function escapeHtml(value: unknown): string {
 		.replace(/'/g, '&#39;');
 }
 
-function evidenceSummary(evidence: { kind: string; file?: string; line_start?: number; line_end?: number; snippet?: string } | undefined): string {
+type SourceLocation = { file: string; line_start: number; line_end: number };
+
+function formatLocation(location: SourceLocation): string {
+	return `${location.file}:${location.line_start}${location.line_end !== location.line_start ? `-${location.line_end}` : ''}`;
+}
+
+function evidenceSummary(
+	evidence: { kind: string; file?: string; line_start?: number; line_end?: number; snippet?: string } | undefined,
+	location?: SourceLocation | null
+): string {
 	if (!evidence) {
-		return 'No source evidence was supplied.';
+		return location
+			? `<p><strong>source location</strong> · ${escapeHtml(formatLocation(location))}</p>`
+			: 'No source evidence was supplied.';
 	}
-	const location = evidence.file
+	const evidenceLocation = evidence.file
 		? `${evidence.file}${evidence.line_start ? `:${evidence.line_start}${evidence.line_end && evidence.line_end !== evidence.line_start ? `-${evidence.line_end}` : ''}` : ''}`
 		: 'artifact metadata';
 	const snippet = evidence.snippet ? `<pre>${escapeHtml(evidence.snippet)}</pre>` : '';
-	return `<p><strong>${escapeHtml(evidence.kind)}</strong> · ${escapeHtml(location)}</p>${snippet}`;
+	return `<p><strong>${escapeHtml(evidence.kind)}</strong> · ${escapeHtml(evidenceLocation)}</p>${snippet}`;
 }
 
 /**
@@ -33,8 +44,8 @@ export function renderDiffGraphV2(artifact: DiffGraphV2): string {
 	const symbols = [...artifact.symbols].sort((left, right) => left.id.localeCompare(right.id));
 	const relationships = [...artifact.relationships].sort((left, right) => left.id.localeCompare(right.id));
 	const objectIds = new Set([...files, ...symbols].map(item => item.id));
-	const objectCard = (kind: string, item: { id: string; name?: string; path?: string; change_kind: string; evidence?: DiffGraphV2['files'][number]['evidence'] }) =>
-		`<article id="${escapeHtml(item.id)}"><h3>${escapeHtml(item.name ?? item.path ?? item.id)}</h3><p><code>${escapeHtml(kind)}</code> · ${escapeHtml(item.change_kind)}</p>${evidenceSummary(item.evidence?.[0])}</article>`;
+	const objectCard = (kind: string, item: { id: string; name?: string; path?: string; change_kind: string; evidence?: DiffGraphV2['files'][number]['evidence']; location?: SourceLocation | null }) =>
+		`<article id="${escapeHtml(item.id)}"><h3>${escapeHtml(item.name ?? item.path ?? item.id)}</h3><p><code>${escapeHtml(kind)}</code> · ${escapeHtml(item.change_kind)}</p>${evidenceSummary(item.evidence?.[0], item.location)}</article>`;
 	const endpoint = (id: string) => objectIds.has(id)
 		? `<a href="#${escapeHtml(id)}"><code>${escapeHtml(id)}</code></a>`
 		: `<code>${escapeHtml(id)}</code>`;

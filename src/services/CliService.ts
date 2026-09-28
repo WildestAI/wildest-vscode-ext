@@ -431,7 +431,11 @@ export class CliService {
 				return 'invalid';
 			}
 			return header.readUInt16LE(18) === expectedMachine ? 'ready' : 'architecture-mismatch';
-		} catch {
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === 'EACCES' || code === 'EPERM') {
+				return 'ready';
+			}
 			return 'invalid';
 		}
 	}

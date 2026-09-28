@@ -264,6 +264,18 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(diagnostics.status, 'ready');
 	});
 
+	test('keeps an execute-only packaged Linux binary launchable', () => {
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: () => { throw fileError('EACCES'); },
+		};
+
+		assert.strictEqual(CliService.inspectRuntime(context, runtime).status, 'ready');
+		assert.doesNotThrow(() => CliService.setupCommand([], context, runtime));
+	});
+
 	test('rejects unsupported architecture instead of selecting a wrong binary', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'win32', architecture: 'arm64', env: {}, existsSync: () => true,

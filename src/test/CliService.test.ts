@@ -19,6 +19,13 @@ const validPeHeader = (length: number): Buffer => {
 	return header.subarray(0, length);
 };
 
+const linuxElfHeader = (machine: number, length: number): Buffer => {
+	const header = Buffer.alloc(20);
+	header.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
+	header.writeUInt16LE(machine, 18);
+	return header.subarray(0, length);
+};
+
 const compatibleProbeArtifact = JSON.stringify({
 	schema_version: '2.0',
 	generated_at: '2026-08-30T09:30:00Z',
@@ -227,6 +234,34 @@ suite('CliService runtime diagnostics', () => {
 
 		assert.strictEqual(CliService.inspectRuntime(context, runtime).status, 'invalid');
 		assert.throws(() => CliService.setupCommand([], context, runtime), /Packaged CLI is invalid.*Reinstall/);
+	});
+
+	test('reports a packaged Linux binary for the wrong architecture before launch', () => {
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => linuxElfHeader(183, length),
+		};
+
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'architecture-mismatch');
+		assert.match(diagnostics.detail, /does not match this linux\/x64 machine/);
+		assert.throws(
+			() => CliService.setupCommand([], context, runtime),
+			/architecture does not match this machine.*Reinstall/
+		);
+	});
+
+	test('accepts a matching packaged Linux ELF binary', () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'linux', architecture: 'arm64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => linuxElfHeader(183, length),
+		});
+
+		assert.strictEqual(diagnostics.status, 'ready');
 	});
 
 	test('rejects unsupported architecture instead of selecting a wrong binary', () => {

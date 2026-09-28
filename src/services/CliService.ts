@@ -6,7 +6,7 @@ import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 import { DiffGraphContractError, validateDiffGraphArtifact } from '../utils/diffGraphV2';
 
-export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'invalid' | 'unsupported';
+export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'invalid' | 'architecture-mismatch' | 'unsupported';
 export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable' | 'timed-out';
 
 export class CliCancelledError extends Error {
@@ -112,7 +112,7 @@ export class CliService {
 			};
 		}
 
-		const status = this.inspectLaunchability(executable, runtime);
+		const status = this.inspectPackagedLaunchability(executable, runtime);
 		return {
 			source: 'packaged binary',
 			status,
@@ -121,6 +121,8 @@ export class CliService {
 			executable,
 			detail: status === 'ready'
 				? 'The packaged CLI is available.'
+				: status === 'architecture-mismatch'
+					? `The packaged CLI ${binaryName} does not match this ${runtime.platform}/${runtime.architecture} machine. Reinstall the extension to restore the matching release artifact.`
 				: status === 'permission-denied'
 					? `The packaged CLI ${binaryName} exists but cannot be executed. Reinstall the extension; on macOS/Linux, verify that the file has execute permission.`
 					: status === 'missing'
@@ -401,6 +403,39 @@ export class CliService {
 		}
 	}
 
+	/**
+	 * Validate the architecture of packaged Linux executables before launch.
+	 * Development runtimes can be scripts, so this deliberately applies only to
+	 * the platform-specific release artifact selected from the extension bundle.
+	 */
+	private static inspectPackagedLaunchability(
+		candidate: fs.PathLike,
+		runtime: RuntimeEnvironment,
+	): Exclude<CliRuntimeStatus, 'unsupported'> {
+		const status = this.inspectLaunchability(candidate, runtime);
+		if (status !== 'ready' || runtime.platform !== 'linux' || !runtime.readFileHeader) {
+			return status;
+		}
+
+		try {
+			const header = runtime.readFileHeader(candidate, 20);
+			if (header.length < 20 || !header.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+				return 'invalid';
+			}
+			// ELF64 with little-endian e_machine is required by the bundled Linux builds.
+			if (header[4] !== 2 || header[5] !== 1) {
+				return 'invalid';
+			}
+			const expectedMachine = runtime.architecture === 'x64' ? 62 : runtime.architecture === 'arm64' ? 183 : undefined;
+			if (expectedMachine === undefined) {
+				return 'invalid';
+			}
+			return header.readUInt16LE(18) === expectedMachine ? 'ready' : 'architecture-mismatch';
+		} catch {
+			return 'invalid';
+		}
+	}
+
 	private static readFileHeader(candidate: fs.PathLike, length: number): Buffer {
 		const descriptor = fs.openSync(candidate, 'r');
 		try {
@@ -482,13 +517,15 @@ export class CliService {
 		if (!binaryName) {
 			throw new Error(`Unsupported platform: ${runtime.platform} ${runtime.architecture}`);
 		}
-		const status = this.inspectLaunchability(executable, runtime);
+		const status = this.inspectPackagedLaunchability(executable, runtime);
 		if (status !== 'ready') {
 			throw new Error(status === 'permission-denied'
 				? `Packaged CLI is not executable: ${executable}. Reinstall the extension and verify execute permission.`
 				: status === 'missing'
 					? `Packaged CLI is missing: ${executable}. Reinstall the extension.`
-					: `Packaged CLI is invalid: ${executable}. Reinstall the extension.`);
+					: status === 'architecture-mismatch'
+						? `Packaged CLI architecture does not match this machine: ${executable}. Reinstall the extension to restore the matching release artifact.`
+						: `Packaged CLI is invalid: ${executable}. Reinstall the extension.`);
 		}
 		return {
 			executable,

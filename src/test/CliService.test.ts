@@ -27,7 +27,7 @@ const linuxElfHeader = (machine: number, length: number): Buffer => {
 };
 
 const macosMachOHeader = (cpuType: number, length: number): Buffer => {
-	const header = Buffer.alloc(12);
+	const header = Buffer.alloc(32);
 	header.set([0xcf, 0xfa, 0xed, 0xfe]);
 	header.writeUInt32LE(cpuType, 4);
 	return header.subarray(0, length);
@@ -288,7 +288,18 @@ suite('CliService runtime diagnostics', () => {
 		);
 	});
 
-	test('accepts a matching packaged macOS Mach-O binary', () => {
+	test('rejects a truncated packaged macOS Mach-O binary before launch', () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: () => macosMachOHeader(0x01000007, 12),
+		});
+
+		assert.strictEqual(diagnostics.status, 'invalid');
+	});
+
+	test('accepts a matching complete packaged macOS Mach-O binary', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => true,
 			accessSync: () => undefined,

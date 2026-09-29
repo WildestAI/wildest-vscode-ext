@@ -435,8 +435,8 @@ export class CliService {
 			}
 
 			if (runtime.platform === 'darwin') {
-				const header = runtime.readFileHeader(candidate, 12);
-				if (header.length < 12 || !header.subarray(0, 4).equals(Buffer.from([0xcf, 0xfa, 0xed, 0xfe]))) {
+				const header = runtime.readFileHeader(candidate, 32);
+				if (header.length < 32 || !header.subarray(0, 4).equals(Buffer.from([0xcf, 0xfa, 0xed, 0xfe]))) {
 					return 'invalid';
 				}
 				// Bundled macOS artifacts are thin, 64-bit little-endian Mach-O binaries.

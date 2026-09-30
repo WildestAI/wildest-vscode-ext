@@ -404,7 +404,7 @@ export class CliService {
 	}
 
 	/**
-	 * Validate the architecture of packaged Linux executables before launch.
+	 * Validate the architecture of packaged native executables before launch.
 	 * Development runtimes can be scripts, so this deliberately applies only to
 	 * the platform-specific release artifact selected from the extension bundle.
 	 */
@@ -413,24 +413,41 @@ export class CliService {
 		runtime: RuntimeEnvironment,
 	): Exclude<CliRuntimeStatus, 'unsupported'> {
 		const status = this.inspectLaunchability(candidate, runtime);
-		if (status !== 'ready' || runtime.platform !== 'linux' || !runtime.readFileHeader) {
+		if (status !== 'ready' || !runtime.readFileHeader) {
 			return status;
 		}
 
 		try {
-			const header = runtime.readFileHeader(candidate, 20);
-			if (header.length < 20 || !header.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
-				return 'invalid';
+			if (runtime.platform === 'linux') {
+				const header = runtime.readFileHeader(candidate, 20);
+				if (header.length < 20 || !header.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+					return 'invalid';
+				}
+				// ELF64 with little-endian e_machine is required by the bundled Linux builds.
+				if (header[4] !== 2 || header[5] !== 1) {
+					return 'invalid';
+				}
+				const expectedMachine = runtime.architecture === 'x64' ? 62 : runtime.architecture === 'arm64' ? 183 : undefined;
+				if (expectedMachine === undefined) {
+					return 'invalid';
+				}
+				return header.readUInt16LE(18) === expectedMachine ? 'ready' : 'architecture-mismatch';
 			}
-			// ELF64 with little-endian e_machine is required by the bundled Linux builds.
-			if (header[4] !== 2 || header[5] !== 1) {
-				return 'invalid';
+
+			if (runtime.platform === 'darwin') {
+				const header = runtime.readFileHeader(candidate, 32);
+				if (header.length < 32 || !header.subarray(0, 4).equals(Buffer.from([0xcf, 0xfa, 0xed, 0xfe]))) {
+					return 'invalid';
+				}
+				// Bundled macOS artifacts are thin, 64-bit little-endian Mach-O binaries.
+				const expectedCpuType = runtime.architecture === 'x64' ? 0x01000007 : runtime.architecture === 'arm64' ? 0x0100000c : undefined;
+				if (expectedCpuType === undefined) {
+					return 'invalid';
+				}
+				return header.readUInt32LE(4) === expectedCpuType ? 'ready' : 'architecture-mismatch';
 			}
-			const expectedMachine = runtime.architecture === 'x64' ? 62 : runtime.architecture === 'arm64' ? 183 : undefined;
-			if (expectedMachine === undefined) {
-				return 'invalid';
-			}
-			return header.readUInt16LE(18) === expectedMachine ? 'ready' : 'architecture-mismatch';
+
+			return status;
 		} catch (error) {
 			const code = (error as NodeJS.ErrnoException).code;
 			if (code === 'EACCES' || code === 'EPERM') {

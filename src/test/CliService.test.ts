@@ -26,6 +26,13 @@ const linuxElfHeader = (machine: number, length: number): Buffer => {
 	return header.subarray(0, length);
 };
 
+const macosMachOHeader = (cpuType: number, length: number): Buffer => {
+	const header = Buffer.alloc(32);
+	header.set([0xcf, 0xfa, 0xed, 0xfe]);
+	header.writeUInt32LE(cpuType, 4);
+	return header.subarray(0, length);
+};
+
 const compatibleProbeArtifact = JSON.stringify({
 	schema_version: '2.0',
 	generated_at: '2026-08-30T09:30:00Z',
@@ -259,6 +266,45 @@ suite('CliService runtime diagnostics', () => {
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
 			readFileHeader: (_candidate: fs.PathLike, length: number) => linuxElfHeader(183, length),
+		});
+
+		assert.strictEqual(diagnostics.status, 'ready');
+	});
+
+	test('reports a packaged macOS binary for the wrong architecture before launch', () => {
+		const runtime = {
+			platform: 'darwin' as NodeJS.Platform, architecture: 'arm64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => macosMachOHeader(0x01000007, length),
+		};
+
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'architecture-mismatch');
+		assert.match(diagnostics.detail, /does not match this darwin\/arm64 machine/);
+		assert.throws(
+			() => CliService.setupCommand([], context, runtime),
+			/architecture does not match this machine.*Reinstall/
+		);
+	});
+
+	test('rejects a truncated packaged macOS Mach-O binary before launch', () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: () => macosMachOHeader(0x01000007, 12),
+		});
+
+		assert.strictEqual(diagnostics.status, 'invalid');
+	});
+
+	test('accepts a matching complete packaged macOS Mach-O binary', () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => macosMachOHeader(0x01000007, length),
 		});
 
 		assert.strictEqual(diagnostics.status, 'ready');

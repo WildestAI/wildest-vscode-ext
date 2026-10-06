@@ -4,9 +4,8 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { HistoryViewProvider } from '../providers/HistoryViewProvider';
-import { CliCancelledError, CliService } from '../services/CliService';
 import { GitHistoryCache } from '../services/GitHistoryCache';
-import { GitService } from '../services/GitService';
+import { GitCommandCancelledError, GitService } from '../services/GitService';
 import { GitCommit } from '../utils/types';
 
 suite('HistoryViewProvider cache policy', () => {
@@ -24,8 +23,7 @@ suite('HistoryViewProvider cache policy', () => {
 	};
 
 	let originalGetRepositories: typeof GitService.getRepositories;
-	let originalSetupCommand: typeof CliService.setupCommand;
-	let originalExecute: typeof CliService.execute;
+	let originalRunGit: typeof GitService.runGit;
 	let originalShowWarningMessage: typeof vscode.window.showWarningMessage;
 	let messages: any[];
 	let executeCalls: number;
@@ -36,18 +34,13 @@ suite('HistoryViewProvider cache policy', () => {
 		messages = [];
 		executeCalls = 0;
 		originalGetRepositories = GitService.getRepositories;
-		originalSetupCommand = CliService.setupCommand;
-		originalExecute = CliService.execute;
+		originalRunGit = GitService.runGit;
 		originalShowWarningMessage = vscode.window.showWarningMessage;
 
 		GitService.getRepositories = async () => [{ repoRoot, name: 'test' }] as any;
-		CliService.setupCommand = () => ({ executable: 'wild', args: [], env: {} });
-		CliService.execute = async () => {
+		GitService.runGit = async () => {
 			executeCalls++;
-			return {
-				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
-				stderr: '',
-			};
+			return `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`;
 		};
 
 		provider = new HistoryViewProvider(
@@ -68,8 +61,7 @@ suite('HistoryViewProvider cache policy', () => {
 	teardown(() => {
 		GitHistoryCache.invalidate(repoRoot);
 		GitService.getRepositories = originalGetRepositories;
-		CliService.setupCommand = originalSetupCommand;
-		CliService.execute = originalExecute;
+		GitService.runGit = originalRunGit;
 		vscode.window.showWarningMessage = originalShowWarningMessage;
 	});
 
@@ -194,13 +186,10 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('coalesces concurrent forced refreshes into one Git command', async () => {
 		let resolveExecute: (() => void) | undefined;
-		CliService.execute = async () => {
+		GitService.runGit = async () => {
 			executeCalls++;
 			await new Promise<void>(resolve => { resolveExecute = resolve; });
-			return {
-				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
-				stderr: '',
-			};
+			return `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`;
 		};
 
 		const firstRefresh = provider.refresh(true);
@@ -214,11 +203,11 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('cancels stale history fetches without replacing the current view', async () => {
 		let cancellationObserved = false;
-		CliService.execute = async (_command, _repoPath, _progress, cancellationToken) =>
+		GitService.runGit = async (_repoPath, _args, cancellationToken) =>
 			new Promise((_, reject) => {
 				cancellationToken?.onCancellationRequested(() => {
 					cancellationObserved = true;
-					reject(new CliCancelledError());
+					reject(new GitCommandCancelledError());
 				});
 			});
 
@@ -235,17 +224,14 @@ suite('HistoryViewProvider cache policy', () => {
 	test('restarts a cancelled initial load once the visible view is idle', async () => {
 		const view = (provider as any)._view;
 		view.visible = true;
-		CliService.execute = async (_command, _repoPath, _progress, cancellationToken) => {
+		GitService.runGit = async (_repoPath, _args, cancellationToken) => {
 			executeCalls++;
 			if (executeCalls === 1) {
 				return new Promise((_, reject) => {
-					cancellationToken?.onCancellationRequested(() => reject(new CliCancelledError()));
+					cancellationToken?.onCancellationRequested(() => reject(new GitCommandCancelledError()));
 				});
 			}
-			return {
-				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
-				stderr: '',
-			};
+			return `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`;
 		};
 
 		const initialRefresh = provider.refresh(false);
@@ -261,13 +247,10 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('does not let a completed old refresh update a replacement view', async () => {
 		let resolveExecute: (() => void) | undefined;
-		CliService.execute = async () => {
+		GitService.runGit = async () => {
 			executeCalls++;
 			await new Promise<void>(resolve => { resolveExecute = resolve; });
-			return {
-				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
-				stderr: '',
-			};
+			return `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`;
 		};
 		const originalMessages: any[] = [];
 		const replacementMessages: any[] = [];
@@ -311,7 +294,7 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('failed refresh preserves cached history and reports a warning', async () => {
 		GitHistoryCache.update(repoRoot, [commit], ['* ']);
-		CliService.execute = async () => { throw new Error('failed'); };
+		GitService.runGit = async () => { throw new Error('failed'); };
 		let warning = '';
 		vscode.window.showWarningMessage = ((message: string) => {
 			warning = message;
@@ -330,16 +313,13 @@ suite('HistoryViewProvider cache policy', () => {
 	test('schedules another refresh when Git history times out', async () => {
 		let resolveRetry: () => void;
 		const retryCompleted = new Promise<void>(resolve => { resolveRetry = resolve; });
-		CliService.execute = async () => {
+		GitService.runGit = async () => {
 			executeCalls++;
 			if (executeCalls === 1) {
 				throw new Error('Timeout waiting for Git');
 			}
 			resolveRetry();
-			return {
-				stdout: `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`,
-				stderr: '',
-			};
+			return `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`;
 		};
 		const originalSetTimeout = global.setTimeout;
 		let scheduledCallback: (() => void) | undefined;

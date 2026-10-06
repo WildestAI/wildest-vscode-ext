@@ -9,6 +9,14 @@ import { GitInfo } from '../utils/types';
 
 const execFileAsync = promisify(execFile);
 
+/** Raised when a local Git process is stopped because its view was refreshed. */
+export class GitCommandCancelledError extends Error {
+	public constructor() {
+		super('Git operation was cancelled.');
+		this.name = 'GitCommandCancelledError';
+	}
+}
+
 export class GitService {
 	private static gitAPI: any;
 	private static initializationPromise: Promise<void> | undefined;
@@ -83,6 +91,51 @@ export class GitService {
 			}
 			throw new Error('Failed to get Git repositories');
 		}
+	}
+
+	/**
+	 * Run a local Git command without depending on the bundled DiffGraph CLI.
+	 * History remains available while the CLI is unavailable or being upgraded.
+	 */
+	public static async runGit(
+		repoRoot: string,
+		args: string[],
+		cancellationToken?: vscode.CancellationToken,
+	): Promise<string> {
+		if (cancellationToken?.isCancellationRequested) {
+			throw new GitCommandCancelledError();
+		}
+
+		return new Promise<string>((resolve, reject) => {
+			const child = spawn('git', args, { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+			let stdout = '';
+			let stderr = '';
+			let settled = false;
+			let cancellationSubscription: vscode.Disposable | undefined;
+			const settle = (error?: Error) => {
+				if (settled) { return; }
+				settled = true;
+				cancellationSubscription?.dispose();
+				error ? reject(error) : resolve(stdout);
+			};
+
+			child.stdout.setEncoding('utf8');
+			child.stderr.setEncoding('utf8');
+			child.stdout.on('data', (data: string) => { stdout += data; });
+			child.stderr.on('data', (data: string) => { stderr += data; });
+			child.on('error', error => settle(error));
+			child.on('close', code => {
+				if (code === 0) {
+					settle();
+				} else {
+					settle(new Error(stderr.trim() || `git exited with status ${code}`));
+				}
+			});
+			cancellationSubscription = cancellationToken?.onCancellationRequested(() => {
+				child.kill();
+				settle(new GitCommandCancelledError());
+			});
+		});
 	}
 
 	/**

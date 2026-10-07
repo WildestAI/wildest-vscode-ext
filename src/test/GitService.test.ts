@@ -13,6 +13,23 @@ import * as path from 'path';
 import { GitService } from '../services/GitService';
 
 suite('GitService Test Suite', () => {
+	test('reads history through native Git without the bundled DiffGraph CLI', async () => {
+		const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wildest-git-service-'));
+		try {
+			execFileSync('git', ['init', '--quiet', repoRoot]);
+			execFileSync('git', ['config', 'user.name', 'Wildest test'], { cwd: repoRoot });
+			execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: repoRoot });
+			await fs.writeFile(path.join(repoRoot, 'history.txt'), 'initial\n');
+			execFileSync('git', ['add', 'history.txt'], { cwd: repoRoot });
+			execFileSync('git', ['commit', '--quiet', '-m', 'Native history'], { cwd: repoRoot });
+
+			const output = await GitService.runGit(repoRoot, ['log', '-n', '1', '--format=%s']);
+			assert.strictEqual(output.trim(), 'Native history');
+		} finally {
+			await fs.rm(repoRoot, { recursive: true, force: true });
+		}
+	});
+
 	test('fingerprints an untracked repository-root filename beginning with two dots', async () => {
 		const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wildest-git-service-'));
 		try {

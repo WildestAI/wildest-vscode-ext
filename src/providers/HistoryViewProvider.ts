@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { GitService } from '../services/GitService';
-import { CliService } from '../services/CliService';
-import { GitCommit, GitGraphNode, CliCommand } from '../utils/types';
+import { GitCommandCancelledError, GitService } from '../services/GitService';
+import { GitCommit, GitGraphNode } from '../utils/types';
 import { GitHistoryCache } from '../services/GitHistoryCache';
 import { CliCancelledError } from '../services/CliService';
 
@@ -149,7 +148,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			try {
 				await this.loadGitHistory(forceRefresh, cancellationToken);
 			} catch (error) {
-				if (error instanceof CliCancelledError) {
+				if (error instanceof CliCancelledError || error instanceof GitCommandCancelledError) {
 					return;
 				}
 				if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
@@ -262,7 +261,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			});
 			source = 'git';
 		} catch (error: any) {
-			if (error instanceof CliCancelledError) {
+			if (error instanceof CliCancelledError || error instanceof GitCommandCancelledError) {
 				throw error;
 			}
 			if (this._view !== view || cancellationToken?.isCancellationRequested) {
@@ -331,8 +330,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		try {
 			// Always fetch fresh data
 			const args = ['log', '--graph', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'];
-			const command = CliService.setupCommand(args, this._context);
-			const { stdout } = await CliService.execute(command, repoPath, undefined, cancellationToken);
+			const stdout = await GitService.runGit(repoPath, args, cancellationToken);
 			const result = this.parseGitGraphLog(stdout);
 
 			// Update cache with fresh data
@@ -340,7 +338,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 			return result;
 		} catch (error: any) {
-			if (error instanceof CliCancelledError) {
+			if (error instanceof CliCancelledError || error instanceof GitCommandCancelledError) {
 				throw error;
 			}
 			throw new Error(`Failed to get git history: ${error.message}`);

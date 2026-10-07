@@ -94,6 +94,20 @@ export class GitService {
 	}
 
 	/**
+	 * Subscribe to the built-in Git extension's repository-state notifications.
+	 * These notifications include ref updates (such as fetches) and do not honor
+	 * a user's workspace file-watcher exclusions.
+	 */
+	public static async onDidChangeRepositoryState(
+		repoRoot: string,
+		listener: () => void,
+	): Promise<vscode.Disposable | undefined> {
+		await this.waitForGitInitialization();
+		const repository = this.gitAPI?.repositories?.find((candidate: any) => candidate.rootUri?.fsPath === repoRoot);
+		return repository?.state?.onDidChange?.(listener);
+	}
+
+	/**
 	 * Run a local Git command without depending on the bundled DiffGraph CLI.
 	 * History remains available while the CLI is unavailable or being upgraded.
 	 */

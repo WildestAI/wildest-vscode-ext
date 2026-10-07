@@ -193,6 +193,25 @@ suite('HistoryViewProvider cache policy', () => {
 		(provider as any).dispose();
 	});
 
+	test('does not repopulate invalidated history from a stale Git read', async () => {
+		let resolveGit: ((value: string) => void) | undefined;
+		GitService.runGit = async () => {
+			executeCalls++;
+			return new Promise<string>(resolve => { resolveGit = resolve; });
+		};
+
+		const load = (provider as any).loadGitHistory(true);
+		await new Promise<void>(resolve => setImmediate(resolve));
+		(provider as any).handleRepositoryChange(repoRoot);
+		resolveGit?.(`* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`);
+		await load;
+
+		assert.strictEqual(executeCalls, 1);
+		assert.strictEqual(GitHistoryCache.getCached(repoRoot), null);
+		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 0);
+		(provider as any).dispose();
+	});
+
 	test('coalesces concurrent forced refreshes into one Git command', async () => {
 		let resolveExecute: (() => void) | undefined;
 		GitService.runGit = async () => {

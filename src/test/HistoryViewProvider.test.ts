@@ -195,13 +195,16 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('does not repopulate invalidated history from a stale Git read', async () => {
 		let resolveGit: ((value: string) => void) | undefined;
+		let signalGitStarted: (() => void) | undefined;
+		const gitStarted = new Promise<void>(resolve => { signalGitStarted = resolve; });
 		GitService.runGit = async () => {
 			executeCalls++;
+			signalGitStarted?.();
 			return new Promise<string>(resolve => { resolveGit = resolve; });
 		};
 
 		const load = (provider as any).loadGitHistory(true);
-		await new Promise<void>(resolve => setImmediate(resolve));
+		await gitStarted;
 		(provider as any).handleRepositoryChange(repoRoot);
 		resolveGit?.(`* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`);
 		await load;

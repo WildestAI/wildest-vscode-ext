@@ -214,15 +214,18 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('coalesces concurrent forced refreshes into one Git command', async () => {
 		let resolveExecute: (() => void) | undefined;
+		let signalExecuteStarted: (() => void) | undefined;
+		const executeStarted = new Promise<void>(resolve => { signalExecuteStarted = resolve; });
 		GitService.runGit = async () => {
 			executeCalls++;
+			signalExecuteStarted?.();
 			await new Promise<void>(resolve => { resolveExecute = resolve; });
 			return `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`;
 		};
 
 		const firstRefresh = provider.refresh(true);
 		const secondRefresh = provider.refresh(true);
-		await new Promise<void>(resolve => setImmediate(resolve));
+		await executeStarted;
 
 		assert.strictEqual(executeCalls, 1);
 		resolveExecute?.();
@@ -231,8 +234,11 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('cancels stale history fetches without replacing the current view', async () => {
 		let cancellationObserved = false;
+		let signalExecuteStarted: (() => void) | undefined;
+		const executeStarted = new Promise<void>(resolve => { signalExecuteStarted = resolve; });
 		GitService.runGit = async (_repoPath, _args, cancellationToken) =>
 			new Promise((_, reject) => {
+				signalExecuteStarted?.();
 				cancellationToken?.onCancellationRequested(() => {
 					cancellationObserved = true;
 					reject(new GitCommandCancelledError());
@@ -240,7 +246,7 @@ suite('HistoryViewProvider cache policy', () => {
 			});
 
 		const refresh = provider.refresh(true);
-		await new Promise<void>(resolve => setImmediate(resolve));
+		await executeStarted;
 		provider.cancelRefresh();
 		await refresh;
 
@@ -275,8 +281,11 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('does not let a completed old refresh update a replacement view', async () => {
 		let resolveExecute: (() => void) | undefined;
+		let signalExecuteStarted: (() => void) | undefined;
+		const executeStarted = new Promise<void>(resolve => { signalExecuteStarted = resolve; });
 		GitService.runGit = async () => {
 			executeCalls++;
+			signalExecuteStarted?.();
 			await new Promise<void>(resolve => { resolveExecute = resolve; });
 			return `* ${commit.hash}|${commit.shortHash}|${commit.author}|${commit.email}|${commit.date.toISOString()}|${commit.subject}||HEAD\n`;
 		};
@@ -292,7 +301,7 @@ suite('HistoryViewProvider cache policy', () => {
 		};
 		const originalView = (provider as any)._view;
 		const refresh = provider.refresh(true);
-		await new Promise<void>(resolve => setImmediate(resolve));
+		await executeStarted;
 		(provider as any)._view = {
 			webview: {
 				html: '',

@@ -102,6 +102,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider('wildestai.historyView', historyProvider)
 	);
+	context.subscriptions.push(historyProvider);
 
 	// Register history refresh command
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.refreshHistory', async () => {

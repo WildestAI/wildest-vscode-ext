@@ -184,6 +184,15 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 2);
 	});
 
+	test('invalidates warm history when the repository worktree, index, or ref changes', () => {
+		GitHistoryCache.update(repoRoot, [commit], ['* ']);
+
+		(provider as any).handleRepositoryChange(repoRoot);
+
+		assert.strictEqual(GitHistoryCache.getCached(repoRoot), null);
+		(provider as any).dispose();
+	});
+
 	test('coalesces concurrent forced refreshes into one Git command', async () => {
 		let resolveExecute: (() => void) | undefined;
 		GitService.runGit = async () => {

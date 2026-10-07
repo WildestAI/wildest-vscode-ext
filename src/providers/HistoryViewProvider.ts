@@ -20,6 +20,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'wildestai.historyView';
 	private _view?: vscode.WebviewView;
 	private _currentRepoRoot?: string;
+	private readonly _repositoryWatchers = new Map<string, vscode.Disposable[]>();
+	private readonly _repositoryRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private _refreshPromise?: Promise<void>;
 	private _refreshCancellation?: vscode.CancellationTokenSource;
 	private _activeForceRefresh = false;
@@ -85,6 +87,70 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	/** Cancel in-flight history work that can no longer update the visible view. */
 	public cancelRefresh(): void {
 		this._refreshCancellation?.cancel();
+	}
+
+	/** Release repository watchers and pending refreshes when the extension unloads. */
+	public dispose(): void {
+		for (const disposables of this._repositoryWatchers.values()) {
+			for (const disposable of disposables) {
+				disposable.dispose();
+			}
+		}
+		this._repositoryWatchers.clear();
+		for (const timer of this._repositoryRefreshTimers.values()) {
+			clearTimeout(timer);
+		}
+		this._repositoryRefreshTimers.clear();
+		this.cancelRefresh();
+	}
+
+	/**
+	 * Observe the repository state which makes a warm history result stale.
+	 *
+	 * Worktree saves are watched from the repository root. Git's own metadata is
+	 * watched separately because VS Code commonly excludes `.git` from broad
+	 * workspace file watchers. Debouncing turns a save, add, or commit burst
+	 * into one cache invalidation and one fresh history read.
+	 */
+	private ensureRepositoryWatcher(repoRoot: string): void {
+		if (this._repositoryWatchers.has(repoRoot)) {
+			return;
+		}
+		const onChange = () => this.handleRepositoryChange(repoRoot);
+		const repositoryUri = vscode.Uri.file(repoRoot);
+		const gitUri = vscode.Uri.joinPath(repositoryUri, '.git');
+		const patterns = [
+			new vscode.RelativePattern(repositoryUri, '**/*'),
+			new vscode.RelativePattern(gitUri, 'HEAD'),
+			new vscode.RelativePattern(gitUri, 'index'),
+			new vscode.RelativePattern(gitUri, 'packed-refs'),
+			new vscode.RelativePattern(gitUri, 'refs/**'),
+		];
+		const watchers = patterns.flatMap(pattern => {
+			const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+			return [
+				watcher,
+				watcher.onDidCreate(onChange),
+				watcher.onDidChange(onChange),
+				watcher.onDidDelete(onChange),
+			];
+		});
+		this._repositoryWatchers.set(repoRoot, watchers);
+	}
+
+	private handleRepositoryChange(repoRoot: string): void {
+		GitHistoryCache.invalidate(repoRoot);
+		const previousTimer = this._repositoryRefreshTimers.get(repoRoot);
+		if (previousTimer) {
+			clearTimeout(previousTimer);
+		}
+		const timer = setTimeout(() => {
+			this._repositoryRefreshTimers.delete(repoRoot);
+			if (this._currentRepoRoot === repoRoot && this._view?.visible) {
+				void this.refresh(true);
+			}
+		}, 200);
+		this._repositoryRefreshTimers.set(repoRoot, timer);
 	}
 
 	/** Start an initial load only after a cancelled load for an earlier view has settled. */
@@ -201,6 +267,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			const repoRoot = repositories[0].repoRoot;
+			this._currentRepoRoot = repoRoot;
+			this.ensureRepositoryWatcher(repoRoot);
 			const repoName = path.basename(repoRoot);
 
 			// Ensure HTML shell is set (idempotent)

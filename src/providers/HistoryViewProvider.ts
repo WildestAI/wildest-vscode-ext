@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import { GitCommandCancelledError, GitService } from '../services/GitService';
 import { GitCommit, GitGraphNode } from '../utils/types';
 import { GitHistoryCache } from '../services/GitHistoryCache';
@@ -20,6 +21,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = 'wildestai.historyView';
 	private _view?: vscode.WebviewView;
 	private _currentRepoRoot?: string;
+	private readonly _repositoryWatchers = new Map<string, vscode.Disposable[]>();
+	private readonly _repositoryRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private readonly _repositoryGenerations = new Map<string, number>();
 	private _refreshPromise?: Promise<void>;
 	private _refreshCancellation?: vscode.CancellationTokenSource;
 	private _activeForceRefresh = false;
@@ -85,6 +89,112 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	/** Cancel in-flight history work that can no longer update the visible view. */
 	public cancelRefresh(): void {
 		this._refreshCancellation?.cancel();
+	}
+
+	/** Release repository watchers and pending refreshes when the extension unloads. */
+	public dispose(): void {
+		for (const disposables of this._repositoryWatchers.values()) {
+			for (const disposable of disposables) {
+				disposable.dispose();
+			}
+		}
+		this._repositoryWatchers.clear();
+		for (const timer of this._repositoryRefreshTimers.values()) {
+			clearTimeout(timer);
+		}
+		this._repositoryRefreshTimers.clear();
+		this.cancelRefresh();
+	}
+
+	/**
+	 * Observe the repository state which makes a warm history result stale.
+	 *
+	 * Worktree saves are watched from the repository root. Git's own metadata is
+	 * watched separately because VS Code commonly excludes `.git` from broad
+	 * workspace file watchers. Debouncing turns a save, add, or commit burst
+	 * into one cache invalidation and one fresh history read.
+	 */
+	private async ensureRepositoryWatcher(repoRoot: string): Promise<void> {
+		if (this._repositoryWatchers.has(repoRoot)) {
+			return;
+		}
+		const onChange = () => this.handleRepositoryChange(repoRoot);
+		const repositoryUri = vscode.Uri.file(repoRoot);
+		const gitUri = await this.resolveGitMetadataUri(repoRoot);
+		const patterns = [
+			new vscode.RelativePattern(repositoryUri, '**/*'),
+			...(gitUri ? [
+				new vscode.RelativePattern(gitUri, 'HEAD'),
+				new vscode.RelativePattern(gitUri, 'index'),
+				new vscode.RelativePattern(gitUri, 'packed-refs'),
+			] : []),
+		];
+		const watchers = patterns.flatMap(pattern => {
+			const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+			return [
+				watcher,
+				watcher.onDidCreate(onChange),
+				watcher.onDidChange(onChange),
+				watcher.onDidDelete(onChange),
+			];
+		});
+		this._repositoryWatchers.set(repoRoot, watchers);
+		void this.addGitStateWatcher(repoRoot, onChange);
+	}
+
+	/** Git's repository event observes remote ref changes despite file-watcher exclusions. */
+	private async addGitStateWatcher(repoRoot: string, onChange: () => void): Promise<void> {
+		try {
+			const gitStateWatcher = await GitService.onDidChangeRepositoryState(repoRoot, onChange);
+			const activeWatchers = this._repositoryWatchers.get(repoRoot);
+			if (activeWatchers) {
+				if (gitStateWatcher) {
+					activeWatchers.push(gitStateWatcher);
+				}
+			} else {
+				gitStateWatcher?.dispose();
+			}
+		} catch {
+			// File watchers still cover local worktree and Git metadata changes.
+		}
+	}
+
+	/** Resolve a worktree's Git metadata directory, including `.git` file pointers. */
+	private async resolveGitMetadataUri(repoRoot: string): Promise<vscode.Uri | undefined> {
+		const dotGitPath = path.join(repoRoot, '.git');
+		try {
+			const status = await fs.stat(dotGitPath);
+			if (status.isDirectory()) {
+				return vscode.Uri.file(dotGitPath);
+			}
+			if (!status.isFile()) {
+				return undefined;
+			}
+			const pointer = await fs.readFile(dotGitPath, 'utf8');
+			const match = pointer.match(/^gitdir:\s*(.+)\s*$/m);
+			return match ? vscode.Uri.file(path.resolve(path.dirname(dotGitPath), match[1])) : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	private handleRepositoryChange(repoRoot: string): void {
+		this._repositoryGenerations.set(repoRoot, (this._repositoryGenerations.get(repoRoot) ?? 0) + 1);
+		GitHistoryCache.invalidate(repoRoot);
+		if (this._currentRepoRoot === repoRoot) {
+			this.cancelRefresh();
+		}
+		const previousTimer = this._repositoryRefreshTimers.get(repoRoot);
+		if (previousTimer) {
+			clearTimeout(previousTimer);
+		}
+		const timer = setTimeout(() => {
+			this._repositoryRefreshTimers.delete(repoRoot);
+			if (this._currentRepoRoot === repoRoot && this._view?.visible) {
+				void this.refresh(true);
+			}
+		}, 200);
+		this._repositoryRefreshTimers.set(repoRoot, timer);
 	}
 
 	/** Start an initial load only after a cancelled load for an earlier view has settled. */
@@ -201,6 +311,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			const repoRoot = repositories[0].repoRoot;
+			this._currentRepoRoot = repoRoot;
+			await this.ensureRepositoryWatcher(repoRoot);
 			const repoName = path.basename(repoRoot);
 
 			// Ensure HTML shell is set (idempotent)
@@ -235,6 +347,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			const gitFetchStartedAt = performance.now();
+			const generation = this._repositoryGenerations.get(repoRoot) ?? 0;
 			const { commits, graphLines } = await (async () => {
 				try {
 					return await this.getGitCommits(repoRoot, cancellationToken);
@@ -242,9 +355,14 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					gitFetchMs = performance.now() - gitFetchStartedAt;
 				}
 			})();
-			if (this._view !== view || cancellationToken?.isCancellationRequested) {
+			if (
+				this._view !== view ||
+				cancellationToken?.isCancellationRequested ||
+				(this._repositoryGenerations.get(repoRoot) ?? 0) !== generation
+			) {
 				return;
 			}
+			GitHistoryCache.update(repoRoot, commits, graphLines);
 
 			const graphBuildStartedAt = performance.now();
 			const graphData = this.buildGraphData(commits, graphLines);
@@ -333,8 +451,6 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			const stdout = await GitService.runGit(repoPath, args, cancellationToken);
 			const result = this.parseGitGraphLog(stdout);
 
-			// Update cache with fresh data
-			GitHistoryCache.update(repoPath, result.commits, result.graphLines);
 
 			return result;
 		} catch (error: any) {

@@ -2,6 +2,7 @@ import { HistoryPerformanceSnapshot } from '../providers/HistoryViewProvider';
 
 export const WARM_HISTORY_BUDGET_MS = 300;
 export const CACHED_GRAPH_FIRST_PAINT_BUDGET_MS = 500;
+export const CANCELLATION_ACKNOWLEDGEMENT_BUDGET_MS = 250;
 
 export type HistoryBudgetStatus = 'pass' | 'fail' | 'not-measured';
 
@@ -38,6 +39,19 @@ export function evaluateCachedGraphFirstPaintBudget(
 	return evaluateBudget(
 		snapshot.firstUsableGraphMs,
 		CACHED_GRAPH_FIRST_PAINT_BUDGET_MS,
+	);
+}
+
+/**
+ * Evaluate cancellation only when the current visible history refresh was
+ * explicitly cancelled. Unrelated loads are not presented as cancellation data.
+ */
+export function evaluateCancellationAcknowledgementBudget(
+	snapshot: HistoryPerformanceSnapshot,
+): HistoryBudgetResult {
+	return evaluateBudget(
+		snapshot.cancellationAcknowledgementMs,
+		CANCELLATION_ACKNOWLEDGEMENT_BUDGET_MS,
 	);
 }
 

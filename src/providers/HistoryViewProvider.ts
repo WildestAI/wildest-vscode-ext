@@ -14,6 +14,8 @@ export interface HistoryPerformanceSnapshot {
 	graphBuildMs: number;
 	/** Elapsed time until the cached graph has rendered in the webview, when available. */
 	firstUsableGraphMs: number | undefined;
+	/** Time from a user-visible cancellation request until refresh work stops. */
+	cancellationAcknowledgementMs: number | undefined;
 	totalMs: number;
 }
 
@@ -32,8 +34,9 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _nextHistoryLoadId = 0;
 	private _lastCompletedPerformanceSnapshotLoadId = 0;
 	private readonly _cachedGraphPaints = new Map<number, { loadId: number; startedAt: number; measuredMs?: number }>();
+	private _cancellationRequestedAt?: { token: vscode.CancellationToken; startedAt: number };
 	private _lastPerformanceSnapshot: HistoryPerformanceSnapshot = {
-		source: 'none', repositoryDiscoveryMs: 0, cacheLookupMs: 0, gitFetchMs: undefined, graphBuildMs: 0, firstUsableGraphMs: undefined, totalMs: 0,
+		source: 'none', repositoryDiscoveryMs: 0, cacheLookupMs: 0, gitFetchMs: undefined, graphBuildMs: 0, firstUsableGraphMs: undefined, cancellationAcknowledgementMs: undefined, totalMs: 0,
 	};
 
 	constructor(
@@ -88,7 +91,17 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 	/** Cancel in-flight history work that can no longer update the visible view. */
 	public cancelRefresh(): void {
-		this._refreshCancellation?.cancel();
+		const cancellation = this._refreshCancellation;
+		if (!cancellation || cancellation.token.isCancellationRequested) {
+			return;
+		}
+		// Start this measurement at the visible cancellation request, not when
+		// the Git child process eventually reports that it exited.
+		this._cancellationRequestedAt = {
+			token: cancellation.token,
+			startedAt: performance.now(),
+		};
+		cancellation.cancel();
 	}
 
 	/** Release repository watchers and pending refreshes when the extension unloads. */
@@ -249,27 +262,31 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async runRefreshes(forceRefresh: boolean, cancellationToken: vscode.CancellationToken): Promise<void> {
-		do {
-			if (cancellationToken.isCancellationRequested) {
-				return;
-			}
-			this._pendingForceRefresh = false;
-			this._activeForceRefresh = forceRefresh;
-			try {
-				await this.loadGitHistory(forceRefresh, cancellationToken);
-			} catch (error) {
-				if (error instanceof CliCancelledError || error instanceof GitCommandCancelledError) {
+		try {
+			do {
+				if (cancellationToken.isCancellationRequested) {
 					return;
 				}
-				if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
-					// If we hit a timeout, schedule another refresh attempt.
-					setTimeout(() => void this.refresh(forceRefresh), 2000);
-				} else {
-					throw error;
+				this._pendingForceRefresh = false;
+				this._activeForceRefresh = forceRefresh;
+				try {
+					await this.loadGitHistory(forceRefresh, cancellationToken);
+				} catch (error) {
+					if (error instanceof CliCancelledError || error instanceof GitCommandCancelledError) {
+						return;
+					}
+					if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
+						// If we hit a timeout, schedule another refresh attempt.
+						setTimeout(() => void this.refresh(forceRefresh), 2000);
+					} else {
+						throw error;
+					}
 				}
-			}
-			forceRefresh = this._pendingForceRefresh;
-		} while (forceRefresh);
+				forceRefresh = this._pendingForceRefresh;
+			} while (forceRefresh);
+		} finally {
+			this.recordCancellationAcknowledgement(cancellationToken);
+		}
 	}
 
 	private async loadGitHistory(forceRefresh: boolean, cancellationToken?: vscode.CancellationToken): Promise<void> {
@@ -409,6 +426,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					gitFetchMs,
 					graphBuildMs,
 					firstUsableGraphMs,
+					cancellationAcknowledgementMs: undefined,
 					totalMs: performance.now() - startedAt,
 				};
 				this._lastCompletedPerformanceSnapshotLoadId = loadId;
@@ -418,6 +436,18 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
+
+	private recordCancellationAcknowledgement(cancellationToken: vscode.CancellationToken): void {
+		const pendingCancellation = this._cancellationRequestedAt;
+		if (!pendingCancellation || pendingCancellation.token !== cancellationToken) {
+			return;
+		}
+		this._cancellationRequestedAt = undefined;
+		this._lastPerformanceSnapshot = {
+			...this._lastPerformanceSnapshot,
+			cancellationAcknowledgementMs: performance.now() - pendingCancellation.startedAt,
+		};
+	}
 
 	private recordCachedGraphFirstPaint(cachePaintId: number): void {
 		const pendingPaint = this._cachedGraphPaints.get(cachePaintId);

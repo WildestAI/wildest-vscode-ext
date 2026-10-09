@@ -35,6 +35,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _lastCompletedPerformanceSnapshotLoadId = 0;
 	private readonly _cachedGraphPaints = new Map<number, { loadId: number; startedAt: number; measuredMs?: number }>();
 	private _cancellationRequestedAt?: { token: vscode.CancellationToken; startedAt: number };
+	private readonly _cancelledPerformanceSnapshots = new Map<vscode.CancellationToken, HistoryPerformanceSnapshot>();
 	private _lastPerformanceSnapshot: HistoryPerformanceSnapshot = {
 		source: 'none', repositoryDiscoveryMs: 0, cacheLookupMs: 0, gitFetchMs: undefined, graphBuildMs: 0, firstUsableGraphMs: undefined, cancellationAcknowledgementMs: undefined, totalMs: 0,
 	};
@@ -418,17 +419,20 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				firstUsableGraphMs = renderedCachePaint[1].measuredMs;
 				this._cachedGraphPaints.delete(renderedCachePaint[0]);
 			}
-			if (this._view === view) {
-				this._lastPerformanceSnapshot = {
-					source,
-					repositoryDiscoveryMs,
-					cacheLookupMs,
-					gitFetchMs,
-					graphBuildMs,
-					firstUsableGraphMs,
-					cancellationAcknowledgementMs: undefined,
-					totalMs: performance.now() - startedAt,
-				};
+			const snapshot: HistoryPerformanceSnapshot = {
+				source,
+				repositoryDiscoveryMs,
+				cacheLookupMs,
+				gitFetchMs,
+				graphBuildMs,
+				firstUsableGraphMs,
+				cancellationAcknowledgementMs: undefined,
+				totalMs: performance.now() - startedAt,
+			};
+			if (cancellationToken?.isCancellationRequested) {
+				this._cancelledPerformanceSnapshots.set(cancellationToken, snapshot);
+			} else if (this._view === view) {
+				this._lastPerformanceSnapshot = snapshot;
 				this._lastCompletedPerformanceSnapshotLoadId = loadId;
 				// Ensure loading state is turned off in case of unexpected errors.
 				view.webview.postMessage({ type: 'loading', state: false });
@@ -443,8 +447,10 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 		this._cancellationRequestedAt = undefined;
+		const cancelledSnapshot = this._cancelledPerformanceSnapshots.get(cancellationToken);
+		this._cancelledPerformanceSnapshots.delete(cancellationToken);
 		this._lastPerformanceSnapshot = {
-			...this._lastPerformanceSnapshot,
+			...(cancelledSnapshot ?? this._lastPerformanceSnapshot),
 			cancellationAcknowledgementMs: performance.now() - pendingCancellation.startedAt,
 		};
 	}

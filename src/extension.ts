@@ -25,6 +25,7 @@ import { formatRuntimeDiagnosticsReport } from './utils/runtimeDiagnosticsReport
 import { redactDiagnostics } from './utils/redactDiagnostics';
 import {
 	evaluateCachedGraphFirstPaintBudget,
+	evaluateCancellationAcknowledgementBudget,
 	evaluateWarmHistoryBudget,
 } from './utils/historyPerformanceBudget';
 
@@ -132,6 +133,11 @@ export function activate(context: vscode.ExtensionContext) {
 			? 'not measured (no cached graph was shown)'
 			: `${cachedGraphFirstPaintBudget.status} (${cachedGraphFirstPaintBudget.measuredMs!.toFixed(1)} ms)`;
 		historyPerformanceOutput.appendLine(`Cached graph first-paint budget (<${cachedGraphFirstPaintBudget.budgetMs} ms): ${cachedGraphFirstPaintResult}`);
+		const cancellationBudget = evaluateCancellationAcknowledgementBudget(timing);
+		const cancellationResult = cancellationBudget.status === 'not-measured'
+			? 'not measured (no refresh cancellation acknowledged)'
+			: `${cancellationBudget.status} (${cancellationBudget.measuredMs!.toFixed(1)} ms)`;
+		historyPerformanceOutput.appendLine(`Cancellation acknowledgement budget (<${cancellationBudget.budgetMs} ms): ${cancellationResult}`);
 		historyPerformanceOutput.appendLine('This report stays local and contains no repository paths, commits, or telemetry.');
 		historyPerformanceOutput.show(true);
 	}));

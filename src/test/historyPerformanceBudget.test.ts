@@ -2,7 +2,9 @@ import * as assert from 'assert';
 import { HistoryPerformanceSnapshot } from '../providers/HistoryViewProvider';
 import {
 	CACHED_GRAPH_FIRST_PAINT_BUDGET_MS,
+	CANCELLATION_ACKNOWLEDGEMENT_BUDGET_MS,
 	evaluateCachedGraphFirstPaintBudget,
+	evaluateCancellationAcknowledgementBudget,
 	evaluateWarmHistoryBudget,
 	WARM_HISTORY_BUDGET_MS,
 } from '../utils/historyPerformanceBudget';
@@ -15,6 +17,7 @@ function snapshot(overrides: Partial<HistoryPerformanceSnapshot>): HistoryPerfor
 		gitFetchMs: undefined,
 		graphBuildMs: 0,
 		firstUsableGraphMs: undefined,
+		cancellationAcknowledgementMs: undefined,
 		totalMs: 0,
 		...overrides,
 	};
@@ -64,6 +67,23 @@ suite('History performance budgets', () => {
 		});
 		assert.deepStrictEqual(evaluateCachedGraphFirstPaintBudget(snapshot({ source: 'git' })), {
 			status: 'not-measured', budgetMs: CACHED_GRAPH_FIRST_PAINT_BUDGET_MS,
+		});
+	});
+
+	test('reports the cancellation acknowledgement budget only for a measured cancellation', () => {
+		assert.deepStrictEqual(evaluateCancellationAcknowledgementBudget(snapshot({
+			cancellationAcknowledgementMs: 249.9,
+		})), {
+			status: 'pass', budgetMs: CANCELLATION_ACKNOWLEDGEMENT_BUDGET_MS, measuredMs: 249.9,
+		});
+		assert.deepStrictEqual(evaluateCancellationAcknowledgementBudget(snapshot({
+			cancellationAcknowledgementMs: CANCELLATION_ACKNOWLEDGEMENT_BUDGET_MS,
+		})), {
+			status: 'fail', budgetMs: CANCELLATION_ACKNOWLEDGEMENT_BUDGET_MS,
+			measuredMs: CANCELLATION_ACKNOWLEDGEMENT_BUDGET_MS,
+		});
+		assert.deepStrictEqual(evaluateCancellationAcknowledgementBudget(snapshot({})), {
+			status: 'not-measured', budgetMs: CANCELLATION_ACKNOWLEDGEMENT_BUDGET_MS,
 		});
 	});
 });

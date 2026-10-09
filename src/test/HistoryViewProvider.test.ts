@@ -256,6 +256,11 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(cancellationObserved, true);
 		assert.strictEqual(messages.some(message => message.type === 'error'), false);
 		assert.strictEqual(messages.filter(message => message.type === 'commits').length, 0);
+		const timing = provider.getLastPerformanceSnapshot();
+		assert.strictEqual(timing.source, 'none');
+		assert.ok(timing.gitFetchMs !== undefined && timing.gitFetchMs >= 0);
+		assert.ok(timing.cancellationAcknowledgementMs !== undefined);
+		assert.ok(timing.cancellationAcknowledgementMs >= 0);
 	});
 
 	test('restarts a cancelled initial load once the visible view is idle', async () => {

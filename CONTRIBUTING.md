@@ -167,8 +167,8 @@ Before opening the Extension Development Host, run this smoke test in order:
    wild diff --help
    ```
    The `diff` help must list the `--output` and `--no-open` options used by the
-   extension. If `wild` is not on `PATH`, invoke `.venv/bin/wild` on macOS/Linux
-   or `.venv\Scripts\wild.exe` on Windows.
+   extension. If `wild` is not on `PATH`, invoke `../wild/.venv/bin/wild` on macOS/Linux
+   or `..\wild\.venv\Scripts\wild.exe` on Windows.
 4. Run the automated extension tests: `npm test`
 5. Press F5 and manually test both staged and unstaged changes in the Extension
    Development Host.

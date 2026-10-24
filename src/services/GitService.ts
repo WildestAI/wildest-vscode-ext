@@ -108,7 +108,7 @@ export class GitService {
 	}
 
 	/**
-	 * Run a local Git command without depending on the bundled DiffGraph CLI.
+	 * Run a local Git command without depending on the bundled wild CLI.
 	 * History remains available while the CLI is unavailable or being upgraded.
 	 */
 	public static async runGit(

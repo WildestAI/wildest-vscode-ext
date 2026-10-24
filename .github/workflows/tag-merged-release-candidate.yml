@@ -48,7 +48,7 @@ jobs:
       - name: Verify the requested CLI release is published and final
         env:
           GH_TOKEN: ${{ github.token }}
-          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+          CLI_REPOSITORY: WildestAI/wild
         run: |
           cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
           metadata="$(gh release view "$cli_tag" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isImmutable,isPrerelease)"
@@ -56,7 +56,7 @@ jobs:
       - name: Download and verify all locked CLI release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+          CLI_REPOSITORY: WildestAI/wild
         run: |
           cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
           temp_dir="$(mktemp -d)"

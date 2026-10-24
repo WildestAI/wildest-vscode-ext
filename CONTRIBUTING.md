@@ -33,24 +33,24 @@ Thank you for your interest in contributing to the WildestAI VSCode Extension! T
 
    For development, you'll want to use development mode to test the latest CLI features:
 
-   **Option 1: Clone DiffGraph-CLI in the workspace root (default)**
+   **Option 1: Clone wild in the workspace root (default)**
    ```bash
    # From the wildest-vscode-ext directory
    cd ..
-   git clone https://github.com/WildestAI/DiffGraph-CLI.git
-   cd DiffGraph-CLI
+   git clone https://github.com/WildestAI/wild.git
+   cd wild
    python -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    pip install -e .
    cd ../wildest-vscode-ext
    ```
 
-   **Option 2: Use an existing DiffGraph-CLI installation**
+   **Option 2: Use an existing wild installation**
 
    Set the `WILDEST_VENV_PATH` environment variable to point to your venv:
    ```bash
    # In your shell profile (.bashrc, .zshrc, etc.)
-   export WILDEST_VENV_PATH=/path/to/your/DiffGraph-CLI/.venv
+   export WILDEST_VENV_PATH=/path/to/your/wild/.venv
    ```
 
    The Extension Development Host does not receive variables configured only in
@@ -60,7 +60,7 @@ Thank you for your interest in contributing to the WildestAI VSCode Extension! T
    ```json
    "env": {
        "WILDEST_DEV_MODE": "1",
-       "WILDEST_VENV_PATH": "/path/to/your/DiffGraph-CLI/.venv"
+       "WILDEST_VENV_PATH": "/path/to/your/wild/.venv"
    }
    ```
 
@@ -167,8 +167,8 @@ Before opening the Extension Development Host, run this smoke test in order:
    wild diff --help
    ```
    The `diff` help must list the `--output` and `--no-open` options used by the
-   extension. If `wild` is not on `PATH`, invoke `.venv/bin/wild` on macOS/Linux
-   or `.venv\Scripts\wild.exe` on Windows.
+   extension. If `wild` is not on `PATH`, invoke `../wild/.venv/bin/wild` on macOS/Linux
+   or `..\wild\.venv\Scripts\wild.exe` on Windows.
 4. Run the automated extension tests: `npm test`
 5. Press F5 and manually test both staged and unstaged changes in the Extension
    Development Host.

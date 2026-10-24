@@ -415,7 +415,7 @@ suite('CliService runtime diagnostics', () => {
 	}
 
 	test('resolves the default development environment from the extension root', () => {
-		const venvPath = path.resolve(context.extensionPath, '..', 'DiffGraph-CLI', '.venv');
+		const venvPath = path.resolve(context.extensionPath, '..', 'wild', '.venv');
 		const executable = path.join(venvPath, 'bin', 'wild');
 		const runtime = {
 			platform: 'linux' as NodeJS.Platform,

@@ -14,7 +14,7 @@ async function createFixture() {
   await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'wildest-vscode-ext', version: '1.0.5' }));
   await writeFile(join(root, 'package-lock.json'), JSON.stringify({ name: 'wildest-vscode-ext', version: '1.0.5', packages: { '': { version: '1.0.5' } } }));
   await writeFile(join(root, 'release-inputs', 'diffgraph-cli.json'), JSON.stringify({
-    repository: 'WildestAI/DiffGraph-CLI',
+    repository: 'WildestAI/wild',
     releaseTag: 'PENDING_IMMUTABLE_CLI_RELEASE',
     checksumAsset: 'SHA256SUMS',
     manifestAsset: 'cli-manifest.json',

@@ -110,7 +110,7 @@
       },
       {
         "command": "wildestai.recheckRuntimeHealth",
-        "title": "Wildest AI: Recheck Runtime Health",
+        "title": "Recheck Runtime Health",
         "category": "Wildest AI"
       },
       {

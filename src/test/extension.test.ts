@@ -9,7 +9,10 @@ suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
 	test('runs the runtime health recheck command', async () => {
-		await vscode.commands.executeCommand('wildestai.recheckRuntimeHealth');
+		const runtimeReport = await vscode.commands.executeCommand<{ report: string; cliStatus: string }>('wildestai.recheckRuntimeHealth');
+		assert.ok(runtimeReport);
+		assert.match(runtimeReport.report, /WildestAI runtime diagnostics/);
+		assert.ok(runtimeReport.cliStatus.length > 0);
 	});
 
 	test('copies the registered sanitized runtime diagnostics report', async () => {

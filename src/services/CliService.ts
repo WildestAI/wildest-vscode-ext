@@ -447,6 +447,27 @@ export class CliService {
 				return header.readUInt32LE(4) === expectedCpuType ? 'ready' : 'architecture-mismatch';
 			}
 
+			if (runtime.platform === 'win32') {
+				const dosHeader = runtime.readFileHeader(candidate, 0x40);
+				if (dosHeader.length < 0x40 || dosHeader[0] !== 0x4d || dosHeader[1] !== 0x5a) {
+					return 'invalid';
+				}
+				const peOffset = dosHeader.readUInt32LE(0x3c);
+				if (peOffset < 0x40 || peOffset > 1024 * 1024 - 6) {
+					return 'invalid';
+				}
+				const peHeader = runtime.readFileHeader(candidate, peOffset + 6);
+				if (peHeader.length < peOffset + 6 || !peHeader.subarray(peOffset, peOffset + 4).equals(Buffer.from('PE\0\0'))) {
+					return 'invalid';
+				}
+				// Release artifacts currently support 64-bit Windows (IMAGE_FILE_MACHINE_AMD64) only.
+				const expectedMachine = runtime.architecture === 'x64' ? 0x8664 : undefined;
+				if (expectedMachine === undefined) {
+					return 'invalid';
+				}
+				return peHeader.readUInt16LE(peOffset + 4) === expectedMachine ? 'ready' : 'architecture-mismatch';
+			}
+
 			return status;
 		} catch (error) {
 			const code = (error as NodeJS.ErrnoException).code;

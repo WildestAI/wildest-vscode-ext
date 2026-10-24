@@ -11,11 +11,22 @@ const fileError = (code: string): NodeJS.ErrnoException => Object.assign(new Err
 const regularFileStats = { isFile: () => true } as fs.Stats;
 
 const validPeHeader = (length: number): Buffer => {
-	const header = Buffer.alloc(0x84);
+	const header = Buffer.alloc(0x86);
 	header[0] = 0x4d;
 	header[1] = 0x5a;
 	header.writeUInt32LE(0x80, 0x3c);
 	header.write('PE\0\0', 0x80, 'binary');
+	header.writeUInt16LE(0x8664, 0x84);
+	return header.subarray(0, length);
+};
+
+const windowsPeHeader = (machine: number, length: number): Buffer => {
+	const header = Buffer.alloc(0x86);
+	header[0] = 0x4d;
+	header[1] = 0x5a;
+	header.writeUInt32LE(0x80, 0x3c);
+	header.write('PE\0\0', 0x80, 'binary');
+	header.writeUInt16LE(machine, 0x84);
 	return header.subarray(0, length);
 };
 
@@ -230,6 +241,34 @@ suite('CliService runtime diagnostics', () => {
 
 		assert.strictEqual(diagnostics.status, 'invalid');
 		assert.match(diagnostics.detail, /not a launchable file/);
+	});
+
+	test('reports a packaged Windows binary for the wrong architecture before launch', () => {
+		const runtime = {
+			platform: 'win32' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => windowsPeHeader(0xaa64, length),
+		};
+
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'architecture-mismatch');
+		assert.match(diagnostics.detail, /does not match this win32\/x64 machine/);
+		assert.throws(
+			() => CliService.setupCommand([], context, runtime),
+			/architecture does not match this machine.*Reinstall/
+		);
+	});
+
+	test('accepts a matching packaged Windows PE binary', () => {
+		const diagnostics = CliService.inspectRuntime(context, {
+			platform: 'win32', architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => windowsPeHeader(0x8664, length),
+		});
+
+		assert.strictEqual(diagnostics.status, 'ready');
 	});
 
 	test('rejects an executable directory on POSIX', () => {

@@ -9,7 +9,7 @@ if (tag !== `v${pkg.version}`) {
 }
 const contract = await readContract();
 if (contract.releaseTag === PENDING_RELEASE_TAG) {
-  throw new Error('The CLI release input is still pending. Set releaseTag to the immutable DiffGraph CLI GitHub release tag before tagging this extension.');
+  throw new Error('The CLI release input is still pending. Set releaseTag to the immutable wild CLI GitHub release tag before tagging this extension.');
 }
 if (!IMMUTABLE_CLI_TAG_PATTERN.test(contract.releaseTag)) {
   throw new Error(`CLI release tag ${contract.releaseTag} is not an immutable cli-v<semver>-<12-char-sha> tag.`);

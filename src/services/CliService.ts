@@ -340,7 +340,7 @@ export class CliService {
 		context: vscode.ExtensionContext,
 		runtime: RuntimeEnvironment,
 	): { venvPath: string; binDir: string; executable: string } {
-		const defaultVenvPath = path.resolve(context.extensionPath, '..', 'DiffGraph-CLI', '.venv');
+		const defaultVenvPath = path.resolve(context.extensionPath, '..', 'wild', '.venv');
 		const venvPath = runtime.env.WILDEST_VENV_PATH || defaultVenvPath;
 		const isWindows = runtime.platform === 'win32';
 		const binDir = isWindows ? 'Scripts' : 'bin';

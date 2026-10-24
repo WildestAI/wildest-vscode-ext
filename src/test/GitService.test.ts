@@ -13,7 +13,7 @@ import * as path from 'path';
 import { GitService } from '../services/GitService';
 
 suite('GitService Test Suite', () => {
-	test('reads history through native Git without the bundled DiffGraph CLI', async () => {
+	test('reads history through native Git without the bundled wild CLI', async () => {
 		const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wildest-git-service-'));
 		try {
 			execFileSync('git', ['init', '--quiet', repoRoot]);

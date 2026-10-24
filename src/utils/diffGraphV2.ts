@@ -328,7 +328,7 @@ function diffRefAt(value: unknown, path: string): void {
 	optional(diffRef, 'repo_root', stringAt, path);
 }
 
-// Keep this in lockstep with DiffGraph-CLI's v2 warning enum. These resolver
+// Keep this in lockstep with wild's v2 warning enum. These resolver
 // failures are intentionally structured: the webview can show an actionable
 // state without treating a failed ref or merge-base lookup as an empty diff.
 const warningCodes = ['PARSE_FAILURE', 'UNSUPPORTED_LANGUAGE', 'PARTIAL_ANALYSIS', 'LLM_TIMEOUT', 'LLM_ERROR',

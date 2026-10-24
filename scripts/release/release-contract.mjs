@@ -15,8 +15,8 @@ export const IMMUTABLE_CLI_TAG_PATTERN = /^cli-v\d+\.\d+\.\d+-[0-9a-f]{12}$/i;
  * Enforces the fixed release-input shape and immutable CLI tag policy.
  */
 export function validateContract(contract) {
-  if (contract.repository !== 'WildestAI/DiffGraph-CLI') {
-    throw new Error('release input must identify WildestAI/DiffGraph-CLI');
+  if (contract.repository !== 'WildestAI/wild') {
+    throw new Error('release input must identify WildestAI/wild');
   }
   if (!Array.isArray(contract.assets) || contract.assets.length !== REQUIRED_ASSETS.length ||
       [...contract.assets].sort().join('\n') !== [...REQUIRED_ASSETS].sort().join('\n')) {

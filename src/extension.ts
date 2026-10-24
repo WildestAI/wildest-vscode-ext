@@ -239,8 +239,24 @@ export function activate(context: vscode.ExtensionContext) {
 		runtimeDiagnosticsOutput.show(true);
 
 		if (runtimeReport.cliStatus !== 'ready') {
-			void vscode.window.showWarningMessage(`WildestAI CLI ${runtimeReport.cliStatus}: ${runtimeReport.cliDetail}`);
+			const action = await vscode.window.showWarningMessage(
+				`WildestAI CLI ${runtimeReport.cliStatus}: ${runtimeReport.cliDetail}`,
+				'Recheck Runtime Health',
+				'Open Install Help',
+				'Copy Diagnostics',
+			);
+			if (action === 'Recheck Runtime Health') {
+				await vscode.commands.executeCommand('wildestai.recheckRuntimeHealth');
+			} else if (action === 'Open Install Help') {
+				await vscode.env.openExternal(vscode.Uri.parse('https://marketplace.visualstudio.com/items?itemName=WildestAI.wildest-vscode-ext'));
+			} else if (action === 'Copy Diagnostics') {
+				await vscode.commands.executeCommand('wildestai.copyRuntimeDiagnostics');
+			}
 		}
+	}));
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.recheckRuntimeHealth', async () => {
+		await refreshRuntimeHealthStatus();
+		void vscode.window.showInformationMessage('WildestAI runtime health was rechecked.');
 	}));
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.copyRuntimeDiagnostics', async () => {
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);

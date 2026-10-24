@@ -8,6 +8,10 @@ import * as vscode from 'vscode';
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
+	test('runs the runtime health recheck command', async () => {
+		await vscode.commands.executeCommand('wildestai.recheckRuntimeHealth');
+	});
+
 	test('copies the registered sanitized runtime diagnostics report', async () => {
 		const originalDevMode = process.env.WILDEST_DEV_MODE;
 		const originalVenvPath = process.env.WILDEST_VENV_PATH;

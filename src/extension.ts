@@ -23,6 +23,7 @@ import { CliService } from './services/CliService';
 import { AiProviderId, AiProviderProfile, AiProviderProfileService } from './services/AiProviderProfileService';
 import { formatRuntimeDiagnosticsReport } from './utils/runtimeDiagnosticsReport';
 import { redactDiagnostics } from './utils/redactDiagnostics';
+import { presentRuntimeHealth } from './utils/runtimeHealthPresentation';
 import {
 	evaluateCachedGraphFirstPaintBudget,
 	evaluateCancellationAcknowledgementBudget,
@@ -31,6 +32,8 @@ import {
 
 async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): Promise<{
 	report: string;
+	diagnostics: ReturnType<typeof CliService.inspectRuntime>;
+	probe: Awaited<ReturnType<typeof CliService.probeRuntime>>;
 	cliStatus: string;
 	cliDetail: string;
 }> {
@@ -53,6 +56,8 @@ async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): 
 	}
 
 	return {
+		diagnostics,
+		probe,
 		report: formatRuntimeDiagnosticsReport({
 			extensionVersion: context.extension.packageJSON.version || 'unknown',
 			diagnostics,
@@ -215,6 +220,18 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const runtimeDiagnosticsOutput = vscode.window.createOutputChannel('WildestAI Diagnostics');
 	context.subscriptions.push(runtimeDiagnosticsOutput);
+	const runtimeHealthStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	runtimeHealthStatus.command = 'wildestai.showRuntimeDiagnostics';
+	runtimeHealthStatus.text = '$(sync~spin) WildestAI CLI: checking';
+	runtimeHealthStatus.tooltip = 'Checking WildestAI runtime health…';
+	runtimeHealthStatus.show();
+	context.subscriptions.push(runtimeHealthStatus);
+	const refreshRuntimeHealthStatus = async () => {
+		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
+		runtimeHealthStatus.text = presentRuntimeHealth(runtimeReport.diagnostics, runtimeReport.probe).text;
+		runtimeHealthStatus.tooltip = runtimeReport.report;
+	};
+	void refreshRuntimeHealthStatus();
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', async () => {
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
 		runtimeDiagnosticsOutput.clear();

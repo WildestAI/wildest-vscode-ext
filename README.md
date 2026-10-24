@@ -30,7 +30,7 @@ Run **Wildest AI: Show Runtime Diagnostics** from the Command Palette to see the
 
 The extension contract tests vendor the CLI's complete local-only DiffGraph v2 example at
 `src/test/fixtures/diffgraph-v2.structural.example.json`. Its canonical source is
-`DiffGraph-CLI/diffgraph/schema/diffgraph-v2.structural.example.json` (SHA-256
+`wild/diffgraph/schema/diffgraph-v2.structural.example.json` (SHA-256
 `580a35c321ed7ae7be8ce6605f6aafb21f00a512b028d1f91495e83f566f35fd`). Re-copy the
 fixture byte-for-byte when the CLI contract changes and update the hash only after reviewing that
 upstream change.

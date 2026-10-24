@@ -14,8 +14,8 @@
 4. **Obtain Raw Git Diff Content (for a Changeset)**
    - ✅ Completed: The extension now accesses the Git extension to get the repository path, but does not calculate the diff itself. The Rust CLI tool is responsible for all git operations and diff calculation.
 
-5. **Execute External DiffGraph CLI Tool**
-   - ✅ Completed: The extension now executes the external `diffgraph-cli` tool, passing only the repository path and output directory via environment variables (GIT_DIR, OUTPUT_PATH, LINK_URL). The CLI command, stdout, and stderr are logged to the output channel. No diff is calculated in the extension.
+5. **Execute External wild CLI Tool**
+   - ✅ Completed: The extension now executes the external `wild` tool, passing only the repository path and output directory via environment variables (GIT_DIR, OUTPUT_PATH, LINK_URL). The CLI command, stdout, and stderr are logged to the output channel. No diff is calculated in the extension.
 
 6. **Load Generated HTML into Webview**
    - ⬜ Not Started: No logic to load HTML output from CLI into a Webview.

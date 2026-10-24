@@ -10,7 +10,7 @@ on:
         required: false
         type: string
       cli_release_tag:
-        description: Optional published immutable DiffGraph CLI tag (derive both values automatically when blank)
+        description: Optional published immutable wild CLI tag (derive both values automatically when blank)
         required: false
         type: string
 
@@ -54,7 +54,7 @@ jobs:
             const currentVersion = JSON.parse(readFileSync('package.json', 'utf8')).version;
             const releases = JSON.parse(execFileSync(
               'gh',
-              ['api', '--paginate', '--slurp', 'repos/WildestAI/DiffGraph-CLI/releases?per_page=100'],
+              ['api', '--paginate', '--slurp', 'repos/WildestAI/wild/releases?per_page=100'],
               { encoding: 'utf8' },
             )).flat();
             selected = selectAutomaticHandoff(releases, currentVersion);
@@ -84,7 +84,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
-          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+          CLI_REPOSITORY: WildestAI/wild
         run: |
           metadata="$(gh release view "$CLI_RELEASE_TAG" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isImmutable,isPrerelease)"
           node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease || !release.isImmutable) process.exit(1)' "$metadata" "$CLI_RELEASE_TAG"
@@ -93,7 +93,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
-          CLI_REPOSITORY: WildestAI/DiffGraph-CLI
+          CLI_REPOSITORY: WildestAI/wild
         run: |
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT

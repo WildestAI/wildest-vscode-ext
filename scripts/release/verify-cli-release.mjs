@@ -25,4 +25,4 @@ for (const asset of REQUIRED_ASSETS) {
   const digest = createHash('sha256').update(await readFile(join(dir, asset))).digest('hex');
   if (digest !== checksums.get(asset)) throw new Error(`Checksum mismatch for ${asset}.`);
 }
-console.log(`Verified ${REQUIRED_ASSETS.length} DiffGraph CLI binaries against ${contract.checksumAsset}.`);
+console.log(`Verified ${REQUIRED_ASSETS.length} wild CLI binaries against ${contract.checksumAsset}.`);

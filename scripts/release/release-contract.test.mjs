@@ -3,7 +3,7 @@ import test from 'node:test';
 import { PENDING_RELEASE_TAG, REQUIRED_ASSETS, validateContract } from './release-contract.mjs';
 
 const contract = releaseTag => ({
-  repository: 'WildestAI/DiffGraph-CLI',
+  repository: 'WildestAI/wild',
   releaseTag,
   checksumAsset: 'SHA256SUMS',
   manifestAsset: 'cli-manifest.json',

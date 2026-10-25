@@ -68,7 +68,11 @@ async function createFixture(commitCount) {
 			await runGit(repository, ['add', 'history-fixture.txt']);
 			const timestamp = `2026-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`;
 			await runGit(repository, ['commit', '--quiet', '-m', `fixture revision ${index}`], {
+				GIT_AUTHOR_NAME: 'WildestAI benchmark',
+				GIT_AUTHOR_EMAIL: 'benchmark@wildest.ai',
 				GIT_AUTHOR_DATE: timestamp,
+				GIT_COMMITTER_NAME: 'WildestAI benchmark',
+				GIT_COMMITTER_EMAIL: 'benchmark@wildest.ai',
 				GIT_COMMITTER_DATE: timestamp,
 			});
 		}

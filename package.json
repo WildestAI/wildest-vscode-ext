@@ -199,6 +199,8 @@
     "test:release-handoff": "node --test scripts/release/prepare-release-handoff.test.mjs",
     "test:automatic-release-handoff": "node --test scripts/release/resolve-automatic-handoff.test.mjs",
     "test:published-release": "node --test scripts/release/verify-published-release.test.mjs",
+    "benchmark:history": "node scripts/benchmark-history.mjs --json",
+    "test:benchmark-history": "node --test scripts/benchmark-history.test.mjs",
     "package:vsix": "vsce package --no-dependencies",
     "package:preflight": "node scripts/release/preflight-package.mjs",
     "publish:vscode": "vsce publish",

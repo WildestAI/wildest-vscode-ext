@@ -47,11 +47,12 @@ for two invocations of the exact native `git log` command used by `HistoryViewPr
 fixture defaults to 100 linear commits and can be varied with
 `node scripts/benchmark-history.mjs --commits 500 --json`.
 
-The first and second samples are explicitly reported as **cold native Git history** and **warm
-native Git history**. The latter may benefit from the operating-system filesystem cache; it is
-not an extension in-memory-cache, webview-first-paint, or end-to-end performance claim. Use the
-in-extension **Wildest AI: Show History Performance** command for local cache, first-paint, and
-cancellation measurements. Run `npm run test:benchmark-history` to validate the harness itself.
+The first and second samples are explicitly reported as sequential native Git-history reads. The
+second may benefit from the operating-system filesystem cache, and neither is an OS-cold
+measurement. They are not extension in-memory-cache, webview-first-paint, or end-to-end
+performance claims. Use the in-extension **Wildest AI: Show History Performance** command for
+local cache, first-paint, and cancellation measurements. Run `npm run test:benchmark-history` to
+validate the harness itself.
 
 
 ## Sidebar Explorer

@@ -13,12 +13,19 @@ test('history benchmark emits reproducible, explicitly-scoped JSON measurements'
 
 	assert.deepEqual(result.fixture, { commits: 50, historyLimit: 50 });
 	assert.equal(result.measurements.commitsReturned, 50);
-	assert.equal(typeof result.measurements.coldNativeGitHistoryMs, 'number');
-	assert.equal(typeof result.measurements.warmNativeGitHistoryMs, 'number');
-	assert.ok(result.measurements.coldNativeGitHistoryMs >= 0);
-	assert.ok(result.measurements.warmNativeGitHistoryMs >= 0);
+	assert.equal(typeof result.measurements.firstNativeGitHistoryReadMs, 'number');
+	assert.equal(typeof result.measurements.secondNativeGitHistoryReadMs, 'number');
+	assert.ok(result.measurements.firstNativeGitHistoryReadMs >= 0);
+	assert.ok(result.measurements.secondNativeGitHistoryReadMs >= 0);
 	assert.match(result.runtime.git, /^git version /);
-	assert.match(result.notes.join(' '), /does not claim an extension in-memory cache/i);
+	assert.match(result.notes.join(' '), /neither sample claims an OS-cold baseline/i);
+});
+
+test('history benchmark ignores a caller-supplied Git directory', async () => {
+	const { stdout } = await execFileAsync(process.execPath, [script, '--commits', '50', '--json'], {
+		env: { ...process.env, GIT_DIR: '/nonexistent/wildest-benchmark-git-dir' },
+	});
+	assert.equal(JSON.parse(stdout).measurements.commitsReturned, 50);
 });
 
 test('history benchmark rejects fixture sizes that cannot exercise the 50-commit history query', async () => {

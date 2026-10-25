@@ -7,6 +7,14 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const HISTORY_ARGS = ['log', '--graph', '-n', '50', '--pretty=format:%H|%h|%an|%ae|%ad|%s|%P|%D'];
+const GIT_LOCATION_VARIABLES = new Set([
+	'GIT_DIR',
+	'GIT_WORK_TREE',
+	'GIT_INDEX_FILE',
+	'GIT_OBJECT_DIRECTORY',
+	'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+	'GIT_COMMON_DIR',
+]);
 
 function parseArguments(argv) {
 	let commits = 100;
@@ -36,29 +44,39 @@ function parseArguments(argv) {
 }
 
 async function runGit(repository, args, environment = {}) {
+	const cleanEnvironment = Object.fromEntries(
+		Object.entries(process.env).filter(([name]) => !GIT_LOCATION_VARIABLES.has(name)),
+	);
 	return execFileAsync('git', args, {
 		cwd: repository,
-		env: { ...process.env, ...environment },
+		env: { ...cleanEnvironment, ...environment },
 		maxBuffer: 20 * 1024 * 1024,
 	});
 }
 
 async function createFixture(commitCount) {
 	const repository = await mkdtemp(join(tmpdir(), 'wildest-history-benchmark-'));
-	await runGit(repository, ['init', '--quiet']);
-	await runGit(repository, ['config', 'user.name', 'WildestAI benchmark']);
-	await runGit(repository, ['config', 'user.email', 'benchmark@wildest.ai']);
+	try {
+		await runGit(repository, ['init', '--quiet']);
+		await runGit(repository, ['config', 'user.name', 'WildestAI benchmark']);
+		await runGit(repository, ['config', 'user.email', 'benchmark@wildest.ai']);
+		await runGit(repository, ['config', 'commit.gpgSign', 'false']);
+		await runGit(repository, ['config', 'core.hooksPath', '.git/hooks-disabled']);
 
-	for (let index = 0; index < commitCount; index += 1) {
-		await writeFile(join(repository, 'history-fixture.txt'), `fixture revision ${index}\n`);
-		await runGit(repository, ['add', 'history-fixture.txt']);
-		const timestamp = `2026-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`;
-		await runGit(repository, ['commit', '--quiet', '-m', `fixture revision ${index}`], {
-			GIT_AUTHOR_DATE: timestamp,
-			GIT_COMMITTER_DATE: timestamp,
-		});
+		for (let index = 0; index < commitCount; index += 1) {
+			await writeFile(join(repository, 'history-fixture.txt'), `fixture revision ${index}\n`);
+			await runGit(repository, ['add', 'history-fixture.txt']);
+			const timestamp = `2026-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`;
+			await runGit(repository, ['commit', '--quiet', '-m', `fixture revision ${index}`], {
+				GIT_AUTHOR_DATE: timestamp,
+				GIT_COMMITTER_DATE: timestamp,
+			});
+		}
+		return repository;
+	} catch (error) {
+		await rm(repository, { recursive: true, force: true });
+		throw error;
 	}
-	return repository;
 }
 
 async function timedHistoryRead(repository) {
@@ -79,19 +97,19 @@ async function main() {
 	const { commits, json } = parseArguments(process.argv.slice(2));
 	const repository = await createFixture(commits);
 	try {
-		const cold = await timedHistoryRead(repository);
-		const warm = await timedHistoryRead(repository);
+		const firstRead = await timedHistoryRead(repository);
+		const secondRead = await timedHistoryRead(repository);
 		const result = {
 			fixture: { commits, historyLimit: 50 },
 			runtime: { node: process.version, platform: process.platform, arch: process.arch, git: await gitVersion() },
 			measurements: {
-				coldNativeGitHistoryMs: cold.elapsedMs,
-				warmNativeGitHistoryMs: warm.elapsedMs,
-				commitsReturned: warm.commitsReturned,
+				firstNativeGitHistoryReadMs: firstRead.elapsedMs,
+				secondNativeGitHistoryReadMs: secondRead.elapsedMs,
+				commitsReturned: secondRead.commitsReturned,
 			},
 			notes: [
 				'Both samples run the exact native git log invocation used by HistoryViewProvider.',
-				'The warm sample benefits only from the operating-system filesystem cache; it does not claim an extension in-memory cache or webview first-paint measurement.',
+				'The second read may benefit from the operating-system filesystem cache; neither sample claims an OS-cold baseline, extension in-memory cache, or webview first-paint measurement.',
 			],
 		};
 		if (json) {

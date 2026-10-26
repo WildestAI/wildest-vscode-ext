@@ -173,6 +173,16 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}));
 
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.testAiProvider', async () => {
+		const profile = AiProviderProfileService.getProfileOrDefault();
+		const result = await AiProviderProfileService.preflight(profile, context.secrets);
+		if (result.status === 'ready' || result.status === 'disabled') {
+			void vscode.window.showInformationMessage(result.detail);
+			return;
+		}
+		void vscode.window.showWarningMessage(result.detail);
+	}));
+
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.configureAiProvider', async () => {
 		const providerPick = await vscode.window.showQuickPick([
 			{ label: 'disabled' as AiProviderId, description: 'Keep deterministic Git and DiffGraph workflows AI-free' },

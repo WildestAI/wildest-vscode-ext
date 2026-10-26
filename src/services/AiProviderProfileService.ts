@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as http from 'node:http';
+import * as https from 'node:https';
 
 export const AI_PROVIDER_IDS = ['disabled', 'openai', 'anthropic', 'openai-compatible'] as const;
 export type AiProviderId = typeof AI_PROVIDER_IDS[number];
@@ -16,6 +18,13 @@ export interface AiProviderReadiness {
 	status: 'disabled' | 'ready' | 'needs-configuration';
 	detail: string;
 }
+
+export interface AiProviderPreflight {
+	status: 'disabled' | 'needs-configuration' | 'ready' | 'credentials-rejected' | 'unsupported-model' | 'rate-limited' | 'provider-unavailable' | 'connection-failed';
+	detail: string;
+}
+
+type ProviderRequest = (url: URL, headers: Record<string, string>) => Promise<number>;
 
 const profileSetting = 'ai.providerProfile';
 const secretPrefix = 'wildestai.ai.provider-key.';
@@ -137,6 +146,69 @@ export class AiProviderProfileService {
 			return { status: 'needs-configuration', detail: `No API key is stored for ${profile.provider}. Use “Wildest AI: Configure AI Provider” to save one in VS Code SecretStorage.` };
 		}
 		return { status: 'ready', detail: `${profile.provider} is configured for optional prose enrichment. Keys are stored in VS Code SecretStorage.` };
+	}
+
+	/** Performs a user-invoked, metadata-only provider check without logging the key. */
+	public static async preflight(
+		profile: AiProviderProfile,
+		secrets: vscode.SecretStorage,
+		request: ProviderRequest = this.requestModel,
+	): Promise<AiProviderPreflight> {
+		if (profile.provider === 'disabled') {
+			return { status: 'disabled', detail: 'AI prose enrichment is disabled. Deterministic Git and DiffGraph workflows remain available.' };
+		}
+		const key = await secrets.get(this.secretKey(profile.provider));
+		if (!key || key.trim().length === 0) {
+			return { status: 'needs-configuration', detail: `No API key is stored for ${profile.provider}. Configure the provider, then test it again.` };
+		}
+
+		const url = this.modelEndpoint(profile);
+		const headers: Record<string, string> = profile.provider === 'anthropic'
+			? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
+			: { authorization: `Bearer ${key}` };
+		try {
+			const statusCode = await request(url, headers);
+			if (statusCode >= 200 && statusCode < 300) {
+				return { status: 'ready', detail: `${profile.provider} accepted the configured model for optional prose enrichment.` };
+			}
+			if (statusCode === 401 || statusCode === 403) {
+				return { status: 'credentials-rejected', detail: `${profile.provider} rejected the configured credentials. Check the API key or account credits, then try again.` };
+			}
+			if (statusCode === 404) {
+				return { status: 'unsupported-model', detail: `${profile.provider} could not find the configured model. Choose a model available to this account or endpoint.` };
+			}
+			if (statusCode === 429) {
+				return { status: 'rate-limited', detail: `${profile.provider} is rate-limiting this request. Wait for capacity or select another configured provider.` };
+			}
+			if (statusCode >= 500) {
+				return { status: 'provider-unavailable', detail: `${profile.provider} is currently unavailable. Deterministic Git and DiffGraph workflows remain available.` };
+			}
+			return { status: 'connection-failed', detail: `The ${profile.provider} preflight returned HTTP ${statusCode}. Check the endpoint configuration and try again.` };
+		} catch {
+			return { status: 'connection-failed', detail: `Could not connect to ${profile.provider}. Check the endpoint, network, and proxy settings, then try again.` };
+		}
+	}
+
+	private static modelEndpoint(profile: AiProviderProfile): URL {
+		const baseUrl = new URL(profile.baseUrl!);
+		const basePath = baseUrl.pathname.replace(/\/+$/, '');
+		baseUrl.pathname = profile.provider === 'anthropic'
+			? `${basePath}/v1/models/${encodeURIComponent(profile.model!)}`
+			: `${basePath}/models/${encodeURIComponent(profile.model!)}`;
+		baseUrl.search = '';
+		return baseUrl;
+	}
+
+	private static requestModel(url: URL, headers: Record<string, string>): Promise<number> {
+		const client = url.protocol === 'https:' ? https : http;
+		return new Promise((resolve, reject) => {
+			const request = client.get(url, { headers, timeout: 8000 }, response => {
+				response.resume();
+				resolve(response.statusCode ?? 0);
+			});
+			request.once('timeout', () => request.destroy(new Error('Provider request timed out')));
+			request.once('error', reject);
+		});
 	}
 
 	public static async saveProfile(

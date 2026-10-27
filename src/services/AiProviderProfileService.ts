@@ -157,12 +157,18 @@ export class AiProviderProfileService {
 		if (profile.provider === 'disabled') {
 			return { status: 'disabled', detail: 'AI prose enrichment is disabled. Deterministic Git and DiffGraph workflows remain available.' };
 		}
+		if (!profile.model) {
+			return { status: 'needs-configuration', detail: `No model is configured for ${profile.provider}. Configure the provider with a model name, then test it again.` };
+		}
+		const url = this.modelEndpoint(profile);
+		if (url.protocol === 'http:' && !this.isLoopbackHost(url.hostname)) {
+			return { status: 'connection-failed', detail: `The ${profile.provider} endpoint uses plain HTTP. Use an https:// endpoint, or a loopback address for local models, so the API key is not sent unencrypted.` };
+		}
 		const key = await secrets.get(this.secretKey(profile.provider));
 		if (!key || key.trim().length === 0) {
 			return { status: 'needs-configuration', detail: `No API key is stored for ${profile.provider}. Configure the provider, then test it again.` };
 		}
 
-		const url = this.modelEndpoint(profile);
 		const headers: Record<string, string> = profile.provider === 'anthropic'
 			? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
 			: { authorization: `Bearer ${key}` };
@@ -197,6 +203,10 @@ export class AiProviderProfileService {
 			: `${basePath}/models/${encodeURIComponent(profile.model!)}`;
 		baseUrl.search = '';
 		return baseUrl;
+	}
+
+	private static isLoopbackHost(hostname: string): boolean {
+		return hostname === 'localhost' || hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(hostname);
 	}
 
 	private static requestModel(url: URL, headers: Record<string, string>): Promise<number> {

@@ -220,4 +220,32 @@ suite('AiProviderProfileService', () => {
 		assert.ok(!failed.detail.includes('secret-value'));
 	});
 
+	test('preflight blocks non-loopback HTTP before sending credentials', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://gateway.example.com/v1', model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		let requested = false;
+		const result = await AiProviderProfileService.preflight(profile, { get: async () => 'private-key' } as any, async () => {
+			requested = true;
+			return 200;
+		});
+		assert.strictEqual(result.status, 'connection-failed');
+		assert.strictEqual(requested, false);
+		assert.match(result.detail, /plain HTTP/);
+	});
+
+	test('preflight requires a model before sending credentials', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		let requested = false;
+		const result = await AiProviderProfileService.preflight(profile, { get: async () => 'private-key' } as any, async () => {
+			requested = true;
+			return 200;
+		});
+		assert.strictEqual(result.status, 'needs-configuration');
+		assert.strictEqual(requested, false);
+		assert.match(result.detail, /No model is configured/);
+	});
+
 });

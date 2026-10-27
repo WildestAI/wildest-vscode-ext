@@ -6,7 +6,7 @@ import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 import { DiffGraphContractError, validateDiffGraphArtifact } from '../utils/diffGraphV2';
 
-export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'invalid' | 'architecture-mismatch' | 'unsupported';
+export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'quarantined' | 'invalid' | 'architecture-mismatch' | 'unsupported';
 export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable' | 'timed-out';
 
 export class CliCancelledError extends Error {
@@ -54,6 +54,7 @@ export interface RuntimeEnvironment {
 	accessSync: (candidate: fs.PathLike, mode?: number) => void;
 	statSync: (candidate: fs.PathLike) => fs.Stats;
 	readFileHeader?: (candidate: fs.PathLike, length: number) => Buffer;
+	isQuarantined?: (candidate: fs.PathLike) => boolean;
 }
 
 export class CliService {
@@ -112,7 +113,10 @@ export class CliService {
 			};
 		}
 
-		const status = this.inspectPackagedLaunchability(executable, runtime);
+		const launchability = this.inspectPackagedLaunchability(executable, runtime);
+		const status = launchability === 'ready' && runtime.platform === 'darwin' && runtime.isQuarantined?.(executable)
+			? 'quarantined'
+			: launchability;
 		return {
 			source: 'packaged binary',
 			status,
@@ -125,7 +129,9 @@ export class CliService {
 					? `The packaged CLI ${binaryName} does not match this ${runtime.platform}/${runtime.architecture} machine. Reinstall the extension to restore the matching release artifact.`
 				: status === 'permission-denied'
 					? `The packaged CLI ${binaryName} exists but cannot be executed. Reinstall the extension; on macOS/Linux, verify that the file has execute permission.`
-					: status === 'missing'
+					: status === 'quarantined'
+						? `The packaged CLI ${binaryName} is blocked by macOS quarantine. Reinstall the extension from a trusted source, then reopen VS Code; do not bypass Gatekeeper with an unverified binary.`
+						: status === 'missing'
 						? `The packaged CLI is missing. Install a release that includes ${binaryName} in the extension bin directory.`
 						: `The packaged CLI ${binaryName} is not a launchable file or could not be validated. Reinstall the extension.`,
 		};
@@ -498,7 +504,17 @@ export class CliService {
 			accessSync: fs.accessSync,
 			statSync: fs.statSync,
 			readFileHeader: this.readFileHeader,
+			isQuarantined: this.isQuarantined,
 		};
+	}
+
+	private static isQuarantined(candidate: fs.PathLike): boolean {
+		try {
+			cp.execFileSync('/usr/bin/xattr', ['-p', 'com.apple.quarantine', String(candidate)], { stdio: 'ignore' });
+			return true;
+		} catch {
+			return false;
+		}
 	}
 
 	private static executeProbe: CliProbeExecutor = (executable, args, timeoutMs, cwd) =>
@@ -559,15 +575,20 @@ export class CliService {
 		if (!binaryName) {
 			throw new Error(`Unsupported platform: ${runtime.platform} ${runtime.architecture}`);
 		}
-		const status = this.inspectPackagedLaunchability(executable, runtime);
+		const launchability = this.inspectPackagedLaunchability(executable, runtime);
+		const status = launchability === 'ready' && runtime.platform === 'darwin' && runtime.isQuarantined?.(executable)
+			? 'quarantined'
+			: launchability;
 		if (status !== 'ready') {
 			throw new Error(status === 'permission-denied'
 				? `Packaged CLI is not executable: ${executable}. Reinstall the extension and verify execute permission.`
-				: status === 'missing'
-					? `Packaged CLI is missing: ${executable}. Reinstall the extension.`
-					: status === 'architecture-mismatch'
-						? `Packaged CLI architecture does not match this machine: ${executable}. Reinstall the extension to restore the matching release artifact.`
-						: `Packaged CLI is invalid: ${executable}. Reinstall the extension.`);
+				: status === 'quarantined'
+					? `Packaged CLI is quarantined: ${executable}. Reinstall the extension from a trusted source; do not bypass Gatekeeper with an unverified binary.`
+					: status === 'missing'
+						? `Packaged CLI is missing: ${executable}. Reinstall the extension.`
+						: status === 'architecture-mismatch'
+							? `Packaged CLI architecture does not match this machine: ${executable}. Reinstall the extension to restore the matching release artifact.`
+							: `Packaged CLI is invalid: ${executable}. Reinstall the extension.`);
 		}
 		return {
 			executable,

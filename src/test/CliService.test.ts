@@ -338,6 +338,25 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(diagnostics.status, 'invalid');
 	});
 
+	test('reports a quarantined packaged macOS binary with a safe remediation', () => {
+		const runtime = {
+			platform: 'darwin' as NodeJS.Platform, architecture: 'arm64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => macosMachOHeader(0x0100000c, length),
+			isQuarantined: () => true,
+		};
+
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'quarantined');
+		assert.match(diagnostics.detail, /blocked by macOS quarantine/);
+		assert.match(diagnostics.detail, /do not bypass Gatekeeper/);
+		assert.throws(
+			() => CliService.setupCommand([], context, runtime),
+			/Packaged CLI is quarantined.*trusted source/
+		);
+	});
+
 	test('accepts a matching complete packaged macOS Mach-O binary', () => {
 		const diagnostics = CliService.inspectRuntime(context, {
 			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => true,

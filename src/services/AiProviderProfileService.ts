@@ -164,7 +164,12 @@ export class AiProviderProfileService {
 		if (url.protocol === 'http:' && !this.isLoopbackHost(url.hostname)) {
 			return { status: 'connection-failed', detail: `The ${profile.provider} endpoint uses plain HTTP. Use an https:// endpoint, or a loopback address for local models, so the API key is not sent unencrypted.` };
 		}
-		const key = await secrets.get(this.secretKey(profile.provider));
+		let key: string | undefined;
+		try {
+			key = await secrets.get(this.secretKey(profile.provider));
+		} catch {
+			return { status: 'connection-failed', detail: `Could not read the ${profile.provider} API key from VS Code SecretStorage. Check the VS Code secret store, then try again.` };
+		}
 		if (!key || key.trim().length === 0) {
 			return { status: 'needs-configuration', detail: `No API key is stored for ${profile.provider}. Configure the provider, then test it again.` };
 		}

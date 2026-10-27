@@ -220,6 +220,22 @@ suite('AiProviderProfileService', () => {
 		assert.ok(!failed.detail.includes('secret-value'));
 	});
 
+	test('preflight classifies SecretStorage read failures without sending a request', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		let requested = false;
+		const result = await AiProviderProfileService.preflight(profile, {
+			get: async () => { throw new Error('SecretStorage unavailable'); },
+		} as any, async () => {
+			requested = true;
+			return 200;
+		});
+		assert.strictEqual(result.status, 'connection-failed');
+		assert.strictEqual(requested, false);
+		assert.match(result.detail, /SecretStorage/);
+	});
+
 	test('preflight blocks non-loopback HTTP before sending credentials', async () => {
 		const profile = AiProviderProfileService.normalize({
 			provider: 'openai-compatible', baseUrl: 'http://gateway.example.com/v1', model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',

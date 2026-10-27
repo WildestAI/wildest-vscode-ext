@@ -184,4 +184,84 @@ suite('AiProviderProfileService', () => {
 		assert.strictEqual(missing.status, 'needs-configuration');
 		assert.match(missing.detail, /SecretStorage/);
 	});
+	test('preflights only the configured model and maps provider failures to actionable safe results', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', model: 'local/model', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		const secrets = { get: async () => 'private-key' } as any;
+		let requestedUrl = '';
+		let requestedAuthorization = '';
+		const ready = await AiProviderProfileService.preflight(profile, secrets, async (url, headers) => {
+			requestedUrl = url.toString();
+			requestedAuthorization = headers.authorization;
+			return 200;
+		});
+		assert.strictEqual(ready.status, 'ready');
+		assert.strictEqual(requestedUrl, 'http://127.0.0.1:11434/v1/models/local%2Fmodel');
+		assert.strictEqual(requestedAuthorization, 'Bearer private-key');
+
+		for (const [statusCode, expected] of [[401, 'credentials-rejected'], [404, 'unsupported-model'], [429, 'rate-limited'], [503, 'provider-unavailable']] as const) {
+			const result = await AiProviderProfileService.preflight(profile, secrets, async () => statusCode);
+			assert.strictEqual(result.status, expected);
+			assert.ok(!result.detail.includes('private-key'));
+		}
+	});
+
+	test('preflight reports missing credentials and network failures without leaking key material', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'anthropic', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		const missing = await AiProviderProfileService.preflight(profile, { get: async () => undefined } as any);
+		assert.strictEqual(missing.status, 'needs-configuration');
+		const failed = await AiProviderProfileService.preflight(profile, { get: async () => 'secret-value' } as any, async () => {
+			throw new Error('network unavailable: secret-value');
+		});
+		assert.strictEqual(failed.status, 'connection-failed');
+		assert.ok(!failed.detail.includes('secret-value'));
+	});
+
+	test('preflight classifies SecretStorage read failures without sending a request', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		let requested = false;
+		const result = await AiProviderProfileService.preflight(profile, {
+			get: async () => { throw new Error('SecretStorage unavailable'); },
+		} as any, async () => {
+			requested = true;
+			return 200;
+		});
+		assert.strictEqual(result.status, 'connection-failed');
+		assert.strictEqual(requested, false);
+		assert.match(result.detail, /SecretStorage/);
+	});
+
+	test('preflight blocks non-loopback HTTP before sending credentials', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://gateway.example.com/v1', model: 'local-model', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		let requested = false;
+		const result = await AiProviderProfileService.preflight(profile, { get: async () => 'private-key' } as any, async () => {
+			requested = true;
+			return 200;
+		});
+		assert.strictEqual(result.status, 'connection-failed');
+		assert.strictEqual(requested, false);
+		assert.match(result.detail, /plain HTTP/);
+	});
+
+	test('preflight requires a model before sending credentials', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		let requested = false;
+		const result = await AiProviderProfileService.preflight(profile, { get: async () => 'private-key' } as any, async () => {
+			requested = true;
+			return 200;
+		});
+		assert.strictEqual(result.status, 'needs-configuration');
+		assert.strictEqual(requested, false);
+		assert.match(result.detail, /No model is configured/);
+	});
+
 });

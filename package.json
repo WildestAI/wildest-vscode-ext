@@ -119,6 +119,11 @@
         "category": "Wildest AI"
       },
       {
+        "command": "wildestai.testAiProvider",
+        "title": "Wildest AI: Test AI Provider Connection",
+        "category": "Wildest AI"
+      },
+      {
         "command": "wildestai.disableAiProviderAndRemoveKey",
         "title": "Wildest AI: Disable AI Provider and Remove Key",
         "category": "Wildest AI"

@@ -105,22 +105,44 @@ jobs:
           npm run test:release-contract
           npm run test:release-handoff
           npm run test:automatic-release-handoff
+          npm run test:release-candidate-state
           npm run verify:release-input
-      - name: Refuse to replace an existing release candidate
+      - name: Inspect existing release candidate without mutating it
         if: steps.handoff.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
+          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
         run: |
           branch="release/extension-v${EXTENSION_VERSION}"
-          test -z "$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$branch" --json number --jq '.[].number')" || {
-            echo "An open release candidate already exists for $branch." >&2
-            exit 1
+          pull_requests_file="$(mktemp)"
+          trap 'rm -f "$pull_requests_file"' EXIT
+          # REST pagination avoids the default bounded `gh pr list` result set.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=all&head=${GITHUB_REPOSITORY_OWNER}:${branch}&per_page=100" \
+            --jq '.[] | {number, state: (.state | ascii_upcase), mergedAt: .merged_at, headRefName: .head.ref}' | jq -s '.' > "$pull_requests_file"
+          remote_ref_exists() {
+            local kind="$1" ref="$2" output status
+            if output="$(git ls-remote --exit-code "$kind" origin "$ref" 2>&1)"; then
+              return 0
+            fi
+            status=$?
+            if [ "$status" -eq 2 ]; then
+              return 1
+            fi
+            printf 'Unable to inspect remote %s %s (exit %s): %s\n' "$kind" "$ref" "$status" "$output" >&2
+            exit "$status"
           }
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            echo "Release candidate branch $branch already exists." >&2
-            exit 1
-          fi
+          branch_exists=false
+          remote_ref_exists --heads "$branch" && branch_exists=true
+          tag_exists=false
+          remote_ref_exists --tags "refs/tags/v${EXTENSION_VERSION}" && tag_exists=true
+          result="$(node scripts/release/release-candidate-state.mjs \
+            "$branch" "$EXTENSION_VERSION" "$CLI_RELEASE_TAG" "$branch_exists" "$tag_exists" "$pull_requests_file")"
+          state="$(node -e 'console.log(JSON.parse(process.argv[1]).state)' "$result")"
+          message="$(node -e 'console.log(JSON.parse(process.argv[1]).message)' "$result")"
+          printf 'Release candidate state: %s\n%s\n' "$state" "$message"
+          printf '### Release candidate state\n\n- State: `%s`\n- %s\n' "$state" "$message" >> "$GITHUB_STEP_SUMMARY"
+          test "$state" = 'no-candidate' || exit 1
       - name: Prepare the reviewable extension release candidate
         if: steps.handoff.outputs.skip != 'true'
         env:

@@ -22,8 +22,8 @@ export function inspectReleaseCandidate({ branch, version, cliReleaseTag, branch
   }
 
   const matchingPullRequests = pullRequests.filter(pullRequest => pullRequest.headRefName === branch);
-  const openPullRequest = matchingPullRequests.find(pullRequest => pullRequest.state === 'OPEN');
-  const mergedPullRequest = matchingPullRequests.find(pullRequest => pullRequest.state === 'MERGED' || pullRequest.mergedAt);
+  const openPullRequest = matchingPullRequests.find(pullRequest => pullRequest.state?.toUpperCase() === 'OPEN');
+  const mergedPullRequest = matchingPullRequests.find(pullRequest => pullRequest.state?.toUpperCase() === 'MERGED' || pullRequest.mergedAt);
 
   if (openPullRequest && !branchExists) {
     return {

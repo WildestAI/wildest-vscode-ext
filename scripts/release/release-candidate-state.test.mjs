@@ -28,6 +28,14 @@ test('keeps an open matching candidate PR reviewable', () => {
   assert.match(result.message, /#42/);
 });
 
+test('recognizes GitHub REST lowercase open states', () => {
+  const result = state({
+    branchExists: true,
+    pullRequests: [{ number: 42, state: 'open', headRefName: inputs.branch }],
+  });
+  assert.equal(result.state, 'open-candidate-pr');
+});
+
 test('fails closed with an actionable diagnostic for a stranded branch', () => {
   const result = state({ branchExists: true });
   assert.equal(result.state, 'stranded-branch');

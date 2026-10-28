@@ -119,7 +119,7 @@ jobs:
           trap 'rm -f "$pull_requests_file"' EXIT
           # REST pagination avoids the default bounded `gh pr list` result set.
           gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=all&head=${GITHUB_REPOSITORY_OWNER}:${branch}&per_page=100" \
-            --jq '.[] | {number, state, mergedAt: .merged_at, headRefName: .head.ref}' | jq -s '.' > "$pull_requests_file"
+            --jq '.[] | {number, state: (.state | ascii_upcase), mergedAt: .merged_at, headRefName: .head.ref}' | jq -s '.' > "$pull_requests_file"
           remote_ref_exists() {
             local kind="$1" ref="$2" output status
             if output="$(git ls-remote --exit-code "$kind" origin "$ref" 2>&1)"; then

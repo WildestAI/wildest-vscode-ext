@@ -117,12 +117,25 @@ jobs:
           branch="release/extension-v${EXTENSION_VERSION}"
           pull_requests_file="$(mktemp)"
           trap 'rm -f "$pull_requests_file"' EXIT
-          gh pr list --repo "$GITHUB_REPOSITORY" --state all --head "$branch" \
-            --json number,state,mergedAt,headRefName > "$pull_requests_file"
+          # REST pagination avoids the default bounded `gh pr list` result set.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=all&head=${GITHUB_REPOSITORY_OWNER}:${branch}&per_page=100" \
+            --jq '.[] | {number, state, mergedAt: .merged_at, headRefName: .head.ref}' | jq -s '.' > "$pull_requests_file"
+          remote_ref_exists() {
+            local kind="$1" ref="$2" output status
+            if output="$(git ls-remote --exit-code "$kind" origin "$ref" 2>&1)"; then
+              return 0
+            fi
+            status=$?
+            if [ "$status" -eq 2 ]; then
+              return 1
+            fi
+            printf 'Unable to inspect remote %s %s (exit %s): %s\n' "$kind" "$ref" "$status" "$output" >&2
+            exit "$status"
+          }
           branch_exists=false
-          git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1 && branch_exists=true
+          remote_ref_exists --heads "$branch" && branch_exists=true
           tag_exists=false
-          git ls-remote --exit-code --tags origin "refs/tags/v${EXTENSION_VERSION}" >/dev/null 2>&1 && tag_exists=true
+          remote_ref_exists --tags "refs/tags/v${EXTENSION_VERSION}" && tag_exists=true
           result="$(node scripts/release/release-candidate-state.mjs \
             "$branch" "$EXTENSION_VERSION" "$CLI_RELEASE_TAG" "$branch_exists" "$tag_exists" "$pull_requests_file")"
           state="$(node -e 'console.log(JSON.parse(process.argv[1]).state)' "$result")"

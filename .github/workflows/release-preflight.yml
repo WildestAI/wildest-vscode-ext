@@ -32,6 +32,7 @@ jobs:
           npm run test:release-handoff
           npm run test:automatic-release-handoff
           npm run test:release-candidate-state
+          npm run test:release-candidate-pr-recovery
       - name: Validate the documented CLI release-input contract
         run: npm run verify:release-input
       - name: Build a clean-checkout VSIX with contract placeholders

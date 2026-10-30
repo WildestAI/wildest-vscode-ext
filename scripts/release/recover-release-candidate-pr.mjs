@@ -14,6 +14,13 @@ export function recoverReleaseCandidatePullRequest({ branch, pullRequests }) {
   const matchingPullRequests = pullRequests.filter(pullRequest => pullRequest.headRefName === branch);
   const openPullRequests = matchingPullRequests.filter(pullRequest => pullRequest.state?.toUpperCase() === 'OPEN');
 
+  if (matchingPullRequests.length > openPullRequests.length) {
+    const priorPullRequest = matchingPullRequests.find(pullRequest => pullRequest.state?.toUpperCase() !== 'OPEN');
+    return {
+      action: 'blocked-closed-pr',
+      message: `Recovery blocked: ${branch} has prior non-open candidate PR #${priorPullRequest.number}. Do not reopen or replace it automatically; inspect its release inputs before a maintainer repair decision.`,
+    };
+  }
   if (openPullRequests.length === 1) {
     return {
       action: 'use-existing-pr',
@@ -25,12 +32,6 @@ export function recoverReleaseCandidatePullRequest({ branch, pullRequests }) {
     return {
       action: 'blocked-duplicate-prs',
       message: `Recovery blocked: ${branch} has ${openPullRequests.length} open candidate PRs. Do not select or close either automatically; reconcile the duplicate reviews before retrying.`,
-    };
-  }
-  if (matchingPullRequests.length > 0) {
-    return {
-      action: 'blocked-closed-pr',
-      message: `Recovery blocked: ${branch} has prior non-open candidate PR #${matchingPullRequests[0].number}. Do not reopen or replace it automatically; inspect its release inputs before a maintainer repair decision.`,
     };
   }
   return {

@@ -196,10 +196,10 @@ jobs:
               action="$(node -e 'console.log(JSON.parse(process.argv[1]).action)' "$result")"
             fi
           fi
-          if [ "$create_failed" = true ] && [ "$action" != 'use-existing-pr' ]; then
-            echo 'Unable to create the release candidate PR and no concurrent PR was found.' >&2
-            exit 1
-          fi
           message="$(node -e 'console.log(JSON.parse(process.argv[1]).message)' "$result")"
           printf '### Release candidate PR recovery\n\n- Action: `%s`\n- %s\n' "$action" "$message" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$create_failed" = true ] && [ "$action" != 'use-existing-pr' ]; then
+            echo "Unable to create the release candidate PR: $message" >&2
+            exit 1
+          fi
           test "$action" = 'create-pr' -o "$action" = 'use-existing-pr'

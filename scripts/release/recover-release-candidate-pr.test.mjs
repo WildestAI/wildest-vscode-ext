@@ -38,6 +38,18 @@ test('fails closed for a previous closed candidate PR', () => {
   assert.match(result.message, /#42/);
 });
 
+test('fails closed when an open candidate also has a prior closed PR', () => {
+  const result = recoverReleaseCandidatePullRequest({
+    branch,
+    pullRequests: [
+      { number: 42, state: 'OPEN', headRefName: branch },
+      { number: 41, state: 'CLOSED', headRefName: branch },
+    ],
+  });
+  assert.equal(result.action, 'blocked-closed-pr');
+  assert.match(result.message, /#41/);
+});
+
 test('ignores pull requests for another candidate branch', () => {
   const result = recoverReleaseCandidatePullRequest({
     branch,

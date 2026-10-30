@@ -175,6 +175,7 @@ jobs:
           pull_requests_file="$(mktemp)"
           trap 'rm -f "$pull_requests_file"' EXIT
           find_candidate_prs() {
+            set -o pipefail
             gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=all&head=${GITHUB_REPOSITORY_OWNER}:${branch}&per_page=100" \
               --jq '.[] | {number, state: (.state | ascii_upcase), headRefName: .head.ref}' | jq -s '.' > "$pull_requests_file"
           }

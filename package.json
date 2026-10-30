@@ -204,6 +204,7 @@
     "test:release-handoff": "node --test scripts/release/prepare-release-handoff.test.mjs",
     "test:automatic-release-handoff": "node --test scripts/release/resolve-automatic-handoff.test.mjs",
     "test:release-candidate-state": "node --test scripts/release/release-candidate-state.test.mjs",
+    "test:release-candidate-pr-recovery": "node --test scripts/release/recover-release-candidate-pr.test.mjs",
     "test:published-release": "node --test scripts/release/verify-published-release.test.mjs",
     "benchmark:history": "node scripts/benchmark-history.mjs --json",
     "test:benchmark-history": "node --test scripts/benchmark-history.test.mjs",

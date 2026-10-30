@@ -106,6 +106,7 @@ jobs:
           npm run test:release-handoff
           npm run test:automatic-release-handoff
           npm run test:release-candidate-state
+          npm run test:release-candidate-pr-recovery
           npm run verify:release-input
       - name: Inspect existing release candidate without mutating it
         if: steps.handoff.outputs.skip != 'true'
@@ -157,7 +158,7 @@ jobs:
           git diff --check
           changed="$(git diff --name-only)"
           test "$changed" = $'package-lock.json\npackage.json\nrelease-inputs/diffgraph-cli.json'
-      - name: Commit and open the release candidate PR
+      - name: Commit, push, and safely create or recover the release candidate PR
         if: steps.handoff.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -171,6 +172,35 @@ jobs:
           git commit -m "chore(release): prepare v${EXTENSION_VERSION} for ${CLI_RELEASE_TAG}"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "HEAD:refs/heads/${branch}"
-          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
-            --title "chore(release): prepare v${EXTENSION_VERSION}" \
-            --body "Prepared from verified immutable CLI release \`${CLI_RELEASE_TAG}\`.\n\nThis PR does not tag or publish the extension. After review and merge, create \`v${EXTENSION_VERSION}\` to invoke the existing fail-closed tagged publisher."
+          pull_requests_file="$(mktemp)"
+          trap 'rm -f "$pull_requests_file"' EXIT
+          find_candidate_prs() {
+            set -o pipefail
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=all&head=${GITHUB_REPOSITORY_OWNER}:${branch}&per_page=100" \
+              --jq '.[] | {number, state: (.state | ascii_upcase), headRefName: .head.ref}' | jq -s '.' > "$pull_requests_file"
+          }
+          recovery_result() {
+            node scripts/release/recover-release-candidate-pr.mjs "$branch" "$pull_requests_file"
+          }
+          find_candidate_prs
+          result="$(recovery_result)"
+          action="$(node -e 'console.log(JSON.parse(process.argv[1]).action)' "$result")"
+          create_failed=false
+          if [ "$action" = 'create-pr' ]; then
+            if ! gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+              --title "chore(release): prepare v${EXTENSION_VERSION}" \
+              --body "Prepared from verified immutable CLI release \`${CLI_RELEASE_TAG}\`.\n\nThis PR does not tag or publish the extension. After review and merge, create \`v${EXTENSION_VERSION}\` to invoke the existing fail-closed tagged publisher."; then
+              # A concurrent scheduler may have created the PR after our first read.
+              create_failed=true
+              find_candidate_prs
+              result="$(recovery_result)"
+              action="$(node -e 'console.log(JSON.parse(process.argv[1]).action)' "$result")"
+            fi
+          fi
+          message="$(node -e 'console.log(JSON.parse(process.argv[1]).message)' "$result")"
+          printf '### Release candidate PR recovery\n\n- Action: `%s`\n- %s\n' "$action" "$message" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$create_failed" = true ] && [ "$action" != 'use-existing-pr' ]; then
+            echo "Unable to create the release candidate PR: $message" >&2
+            exit 1
+          fi
+          test "$action" = 'create-pr' -o "$action" = 'use-existing-pr'

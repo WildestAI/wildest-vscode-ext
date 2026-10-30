@@ -28,6 +28,19 @@ test('keeps an open matching candidate PR reviewable', () => {
   assert.match(result.message, /#42/);
 });
 
+test('fails closed when duplicate matching candidate PRs exist', () => {
+  const result = state({
+    branchExists: true,
+    pullRequests: [
+      { number: 42, state: 'OPEN', headRefName: inputs.branch },
+      { number: 43, state: 'open', headRefName: inputs.branch },
+    ],
+  });
+  assert.equal(result.state, 'duplicate-open-candidate-prs');
+  assert.match(result.message, /#42, #43/);
+  assert.match(result.message, /Do not select or close either automatically/);
+});
+
 test('recognizes GitHub REST lowercase open states', () => {
   const result = state({
     branchExists: true,

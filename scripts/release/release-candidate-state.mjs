@@ -22,9 +22,17 @@ export function inspectReleaseCandidate({ branch, version, cliReleaseTag, branch
   }
 
   const matchingPullRequests = pullRequests.filter(pullRequest => pullRequest.headRefName === branch);
-  const openPullRequest = matchingPullRequests.find(pullRequest => pullRequest.state?.toUpperCase() === 'OPEN');
+  const openPullRequests = matchingPullRequests.filter(pullRequest => pullRequest.state?.toUpperCase() === 'OPEN');
+  const openPullRequest = openPullRequests[0];
   const mergedPullRequest = matchingPullRequests.find(pullRequest => pullRequest.state?.toUpperCase() === 'MERGED' || pullRequest.mergedAt);
 
+  if (openPullRequests.length > 1) {
+    const pullRequestNumbers = openPullRequests.map(pullRequest => `#${pullRequest.number}`).join(', ');
+    return {
+      state: 'duplicate-open-candidate-prs',
+      message: `Recovery blocked: ${branch} has ${openPullRequests.length} open candidate PRs (${pullRequestNumbers}). Do not select or close either automatically; reconcile the duplicate reviews before retrying ${cliReleaseTag}.`,
+    };
+  }
   if (openPullRequest && !branchExists) {
     return {
       state: 'pr-only-inconsistency',

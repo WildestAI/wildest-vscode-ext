@@ -107,6 +107,7 @@ jobs:
           npm run test:automatic-release-handoff
           npm run test:release-candidate-state
           npm run test:release-candidate-pr-recovery
+          npm run test:release-handoff-workflow
           npm run verify:release-input
       - name: Inspect existing release candidate without mutating it
         if: steps.handoff.outputs.skip != 'true'
@@ -125,8 +126,12 @@ jobs:
             local kind="$1" ref="$2" output status
             if output="$(git ls-remote --exit-code "$kind" origin "$ref" 2>&1)"; then
               return 0
+            else
+              # Capture the failed probe's status inside the conditional. After
+              # `fi`, `$?` is the status of the `if` compound (zero here), which
+              # would incorrectly turn an absent ref into an inspection error.
+              status=$?
             fi
-            status=$?
             if [ "$status" -eq 2 ]; then
               return 1
             fi

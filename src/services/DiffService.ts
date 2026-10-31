@@ -228,15 +228,15 @@ export class DiffService {
 				// Cache the result
 				this._cache.set(repoRoot, `commit-${commitHash}` as any, outputPath);
 
-				// Show notification
+				// Show content before announcing success so a missing or invalid artifact
+				// cannot produce a misleading completion notification.
+				await this.showWebviewWithContent(outputPath, `commit-${commitHash}`);
+
 				this._notificationService.sendOperationComplete(
 					`Commit DiffGraph`,
 					`${commitHash.substring(0, 7)} in ${path.basename(repoRoot)}`,
 					{ startTime }
 				);
-
-				// Show content
-				await this.showWebviewWithContent(outputPath, `commit-${commitHash}`);
 			} catch (error: any) {
 				throw error;
 			}
@@ -290,15 +290,15 @@ export class DiffService {
 					this._outputChannel.appendLine(`Skipping ${stage} DiffGraph cache because its post-render fingerprint could not be computed: ${String(error)}`);
 				}
 
-				// Show notification
+				// Show content before announcing success so a missing or invalid artifact
+				// cannot produce a misleading completion notification.
+				await this.showWebviewWithContent(outputPath, stage);
+
 				this._notificationService.sendOperationComplete(
 					`${stage.charAt(0).toUpperCase() + stage.slice(1)} DiffGraph`,
 					path.basename(repoRoot),
 					{ startTime }
 				);
-
-				// Show content
-				await this.showWebviewWithContent(outputPath, stage);
 			} catch (error: any) {
 				throw error;
 			}
@@ -335,7 +335,9 @@ export class DiffService {
 		// previously usable graph with a misleading "no changes" screen when the CLI
 		// reports success but its output is missing.
 		if (!fs.existsSync(htmlFilePath)) {
-			throw new Error(`DiffGraph output was not created: ${htmlFilePath}`);
+			const message = `DiffGraph output was not created: ${htmlFilePath}`;
+			this._diffGraphViewProvider.showGenerationError(message);
+			throw new Error(message);
 		}
 		if (path.extname(htmlFilePath) === '.json') {
 			const rawArtifact = await fs.promises.readFile(htmlFilePath, 'utf8');

@@ -67,6 +67,20 @@ suite('DiffService Test Suite', () => {
 		assert.strictEqual(matchesRendererArtifact('/tmp/diff.json', false), false);
 	});
 
+	test('missing replacement output replaces a loading screen with an error while preserving an existing graph', async () => {
+		let generationError: string | undefined;
+		const mockProvider = {
+			showGenerationError: (message: string) => { generationError = message; },
+		} as unknown as DiffGraphViewProvider;
+		const diffService = new DiffService(mockContext, mockProvider);
+
+		await assert.rejects(
+			() => (diffService as any).showWebviewWithContent('/tmp/wildestai-missing-output.html', 'unstaged'),
+			/DiffGraph output was not created/,
+		);
+		assert.match(generationError ?? '', /DiffGraph output was not created/);
+	});
+
 	test('commit requests explicitly select HTML output without changing the range', () => {
 		const commitHash = 'a'.repeat(40);
 		assert.deepStrictEqual(

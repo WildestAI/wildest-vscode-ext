@@ -331,11 +331,11 @@ export class DiffService {
 			vscode.window.showErrorMessage('DiffGraphView provider not available');
 			return;
 		}
-		// if htmlFilePath exists
+		// A successful replacement must have a renderable artifact. Do not replace a
+		// previously usable graph with a misleading "no changes" screen when the CLI
+		// reports success but its output is missing.
 		if (!fs.existsSync(htmlFilePath)) {
-			// show no changes HTML
-			await this._diffGraphViewProvider.showNoChangesScreen();
-			return;
+			throw new Error(`DiffGraph output was not created: ${htmlFilePath}`);
 		}
 		if (path.extname(htmlFilePath) === '.json') {
 			const rawArtifact = await fs.promises.readFile(htmlFilePath, 'utf8');

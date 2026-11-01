@@ -95,6 +95,15 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 		await this.showStaticHtmlScreen(noChangesHtmlPath, backupNoChangesHtml, 'no changes');
 	}
 
+	/** Replace the loading screen after a failed first render without losing an existing graph. */
+	public showGenerationError(message: string): void {
+		if (this._hasUsableGraph) {
+			this._outputChannel.appendLine(`Keeping the previous DiffGraph visible after a failed replacement: ${message}`);
+			return;
+		}
+		this.update('<div style="padding: 20px; text-align: center; color: var(--vscode-foreground);">Unable to generate DiffGraph. Check the error notification for details.</div>');
+	}
+
 	/**
 	 * Shows the diff graph by loading HTML content from the specified file path
 	 * @param htmlPath - Path to the HTML file to display

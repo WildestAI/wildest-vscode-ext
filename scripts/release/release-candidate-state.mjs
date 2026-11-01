@@ -60,7 +60,7 @@ export function inspectReleaseCandidate({ branch, version, cliReleaseTag, branch
   if (branchExists) {
     return {
       state: 'stranded-branch',
-      message: `Recovery blocked: ${branch} exists without an open PR. Expected extension v${version} pinned to immutable CLI ${cliReleaseTag}. Do not overwrite it; inspect its package.json and release-inputs/diffgraph-cli.json, then open a matching review PR or delete it only through an explicit maintainer repair decision.`,
+      message: `Recovery blocked: ${branch} exists without an open PR. Expected extension v${version} pinned to immutable CLI ${cliReleaseTag}. Do not overwrite it. Repair procedure: run \`git fetch origin ${branch}\`, verify \`git show origin/${branch}:package.json\` reports version \`${version}\` and \`git show origin/${branch}:release-inputs/diffgraph-cli.json\` reports releaseTag \`${cliReleaseTag}\`, then open a review PR from ${branch}; otherwise delete it only through an explicit maintainer repair decision.`,
     };
   }
   if (tagExists) {

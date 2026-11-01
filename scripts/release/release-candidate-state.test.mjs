@@ -54,6 +54,10 @@ test('fails closed with an actionable diagnostic for a stranded branch', () => {
   assert.equal(result.state, 'stranded-branch');
   assert.match(result.message, /release\/extension-v1\.2\.0/);
   assert.match(result.message, /cli-v1\.2\.0-a1b2c3d4e5f6/);
+  assert.match(result.message, /git fetch origin release\/extension-v1\.2\.0/);
+  assert.match(result.message, /git show origin\/release\/extension-v1\.2\.0:package\.json/);
+  assert.match(result.message, /git show origin\/release\/extension-v1\.2\.0:release-inputs\/diffgraph-cli\.json/);
+  assert.match(result.message, /open a review PR/);
 });
 
 test('detects a PR-only inconsistency without recreating its branch', () => {

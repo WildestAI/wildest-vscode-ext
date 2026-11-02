@@ -1,6 +1,6 @@
 {
   "repository": "WildestAI/wild",
-  "releaseTag": "PENDING_IMMUTABLE_CLI_RELEASE",
+  "releaseTag": "cli-v1.2.0-7e9e20230841",
   "checksumAsset": "SHA256SUMS",
   "manifestAsset": "cli-manifest.json",
   "assets": [

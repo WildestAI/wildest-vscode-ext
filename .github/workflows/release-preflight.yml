@@ -31,7 +31,29 @@ jobs:
           npm run test:release-contract
           npm run test:release-handoff
           npm run test:automatic-release-handoff
+          npm run test:release-candidate-state
+          npm run test:release-candidate-pr-recovery
+          npm run test:release-handoff-workflow
       - name: Validate the documented CLI release-input contract
         run: npm run verify:release-input
       - name: Build a clean-checkout VSIX with contract placeholders
+        run: npm run package:preflight
+
+  packaged-runtime-smoke:
+    name: Package runtime smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Package a clean-checkout VSIX and verify runtime assets
         run: npm run package:preflight

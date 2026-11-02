@@ -24,7 +24,7 @@ WildestAI is a Visual Studio Code extension that enhances your development workf
 - Production runtime selection uses only a CLI artifact bundled with the extension. It recognizes package targets for macOS x64/ARM64, Linux x64/ARM64, and Windows x64; other targets are rejected rather than running an incompatible binary. Diagnostics report a missing runtime when the selected release does not contain that artifact. Clean-install packaging and smoke-test coverage remain tracked in [issue #19](https://github.com/WildestAI/wildest-vscode-ext/issues/19).
 - Development mode uses a Python virtual environment only when `WILDEST_DEV_MODE=1` or `NODE_ENV=development`. Set `WILDEST_VENV_PATH` when the environment is not at the default development path.
 
-Run **Wildest AI: Show Runtime Diagnostics** from the Command Palette to see the extension version, selected CLI source and path, platform, CLI version, and actionable readiness status. A missing artifact, an unsupported platform/architecture, and a present artifact without execute permission are reported separately. Use **Wildest AI: Copy Sanitized Runtime Diagnostics** to copy the same redacted report for a support request without exposing API keys or provider credentials. Both commands use bounded `wild --version` and `wild diff --format json` probes against an isolated synthetic Git fixture to validate deterministic DiffGraph JSON output and its schema major; they do not analyze your repository or contact an AI provider. Probe errors are redacted and the temporary fixture is removed after the check.
+On activation, the status bar checks the bundled CLI in the background and shows a ready or warning state; select it to open the full report. Run **Wildest AI: Show Runtime Diagnostics** from the Command Palette to see the extension version, selected CLI source and path, platform, CLI version, and actionable readiness status. A missing artifact, an unsupported platform/architecture, and a present artifact without execute permission are reported separately. The warning offers safe next steps: recheck after remediation, open the Marketplace install page, or copy redacted diagnostics. **Wildest AI: Recheck Runtime Health** is also available from the Command Palette. Use **Wildest AI: Copy Sanitized Runtime Diagnostics** to copy the same redacted report for a support request without exposing API keys or provider credentials. Both commands use bounded `wild --version` and `wild diff --format json` probes against an isolated synthetic Git fixture to validate deterministic DiffGraph JSON output and its schema major; they do not analyze your repository or contact an AI provider. Probe errors are redacted and the temporary fixture is removed after the check.
 
 ### DiffGraph artifact compatibility
 
@@ -39,6 +39,20 @@ Consumers require `schema_version` in `MAJOR.MINOR` form, reject unknown majors,
 additive major-2 minor versions only when the complete artifact still satisfies the extension's
 v2 contract. This compatibility parser does not replace or migrate the current HTML webview
 renderer.
+
+### Reproducible native-history benchmark
+
+Run `npm run benchmark:history` to create a disposable, deterministic Git fixture and emit JSON
+for two invocations of the exact native `git log` command used by `HistoryViewProvider`. The
+fixture defaults to 100 linear commits and can be varied with
+`node scripts/benchmark-history.mjs --commits 500 --json`.
+
+The first and second samples are explicitly reported as sequential native Git-history reads. The
+second may benefit from the operating-system filesystem cache, and neither is an OS-cold
+measurement. They are not extension in-memory-cache, webview-first-paint, or end-to-end
+performance claims. Use the in-extension **Wildest AI: Show History Performance** command for
+local cache, first-paint, and cancellation measurements. Run `npm run test:benchmark-history` to
+validate the harness itself.
 
 
 ## Sidebar Explorer

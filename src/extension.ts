@@ -23,6 +23,7 @@ import { CliService } from './services/CliService';
 import { AiProviderId, AiProviderProfile, AiProviderProfileService } from './services/AiProviderProfileService';
 import { formatRuntimeDiagnosticsReport } from './utils/runtimeDiagnosticsReport';
 import { redactDiagnostics } from './utils/redactDiagnostics';
+import { presentRuntimeHealth } from './utils/runtimeHealthPresentation';
 import {
 	evaluateCachedGraphFirstPaintBudget,
 	evaluateCancellationAcknowledgementBudget,
@@ -31,6 +32,8 @@ import {
 
 async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): Promise<{
 	report: string;
+	diagnostics: ReturnType<typeof CliService.inspectRuntime>;
+	probe: Awaited<ReturnType<typeof CliService.probeRuntime>>;
 	cliStatus: string;
 	cliDetail: string;
 }> {
@@ -53,6 +56,8 @@ async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): 
 	}
 
 	return {
+		diagnostics,
+		probe,
 		report: formatRuntimeDiagnosticsReport({
 			extensionVersion: context.extension.packageJSON.version || 'unknown',
 			diagnostics,
@@ -168,6 +173,16 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}));
 
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.testAiProvider', async () => {
+		const profile = AiProviderProfileService.getProfileOrDefault();
+		const result = await AiProviderProfileService.preflight(profile, context.secrets);
+		if (result.status === 'ready' || result.status === 'disabled') {
+			void vscode.window.showInformationMessage(result.detail);
+			return;
+		}
+		void vscode.window.showWarningMessage(result.detail);
+	}));
+
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.configureAiProvider', async () => {
 		const providerPick = await vscode.window.showQuickPick([
 			{ label: 'disabled' as AiProviderId, description: 'Keep deterministic Git and DiffGraph workflows AI-free' },
@@ -215,6 +230,23 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const runtimeDiagnosticsOutput = vscode.window.createOutputChannel('WildestAI Diagnostics');
 	context.subscriptions.push(runtimeDiagnosticsOutput);
+	const runtimeHealthStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	runtimeHealthStatus.command = 'wildestai.showRuntimeDiagnostics';
+	runtimeHealthStatus.text = '$(sync~spin) WildestAI CLI: checking';
+	runtimeHealthStatus.tooltip = 'Checking WildestAI runtime health…';
+	runtimeHealthStatus.show();
+	context.subscriptions.push(runtimeHealthStatus);
+	const refreshRuntimeHealthStatus = async (refreshDiagnosticsOutput = false) => {
+		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
+		runtimeHealthStatus.text = presentRuntimeHealth(runtimeReport.diagnostics, runtimeReport.probe).text;
+		runtimeHealthStatus.tooltip = runtimeReport.report;
+		if (refreshDiagnosticsOutput) {
+			runtimeDiagnosticsOutput.clear();
+			runtimeDiagnosticsOutput.appendLine(runtimeReport.report);
+		}
+		return runtimeReport;
+	};
+	void refreshRuntimeHealthStatus();
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', async () => {
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
 		runtimeDiagnosticsOutput.clear();
@@ -222,8 +254,25 @@ export function activate(context: vscode.ExtensionContext) {
 		runtimeDiagnosticsOutput.show(true);
 
 		if (runtimeReport.cliStatus !== 'ready') {
-			void vscode.window.showWarningMessage(`WildestAI CLI ${runtimeReport.cliStatus}: ${runtimeReport.cliDetail}`);
+			const action = await vscode.window.showWarningMessage(
+				`WildestAI CLI ${runtimeReport.cliStatus}: ${runtimeReport.cliDetail}`,
+				'Recheck Runtime Health',
+				'Open Install Help',
+				'Copy Diagnostics',
+			);
+			if (action === 'Recheck Runtime Health') {
+				await vscode.commands.executeCommand('wildestai.recheckRuntimeHealth');
+			} else if (action === 'Open Install Help') {
+				await vscode.env.openExternal(vscode.Uri.parse('https://marketplace.visualstudio.com/items?itemName=WildestAI.wildest-vscode-ext'));
+			} else if (action === 'Copy Diagnostics') {
+				await vscode.commands.executeCommand('wildestai.copyRuntimeDiagnostics');
+			}
 		}
+	}));
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.recheckRuntimeHealth', async () => {
+		const runtimeReport = await refreshRuntimeHealthStatus(true);
+		void vscode.window.showInformationMessage('WildestAI runtime health was rechecked.');
+		return runtimeReport;
 	}));
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.copyRuntimeDiagnostics', async () => {
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);

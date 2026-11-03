@@ -39,7 +39,12 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _nextCachedGraphPaintId = 0;
 	private _nextHistoryLoadId = 0;
 	private _lastCompletedPerformanceSnapshotLoadId = 0;
-	private readonly _cachedGraphPaints = new Map<number, { loadId: number; startedAt: number; measuredMs?: number }>();
+	private readonly _cachedGraphPaints = new Map<number, {
+		loadId: number;
+		startedAt: number;
+		registeredAt: number;
+		measuredMs?: number;
+	}>();
 	private _cancellationRequestedAt?: { token: vscode.CancellationToken; startedAt: number };
 	private readonly _cancelledPerformanceSnapshots = new Map<vscode.CancellationToken, HistoryPerformanceSnapshot>();
 	private _lastPerformanceSnapshot: HistoryPerformanceSnapshot = {
@@ -352,9 +357,13 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				const graphBuildStartedAt = performance.now();
 				const graphData = this.buildGraphData(cached.commits, cached.graphLines);
 				graphBuildMs += performance.now() - graphBuildStartedAt;
-				this.pruneCachedGraphPaints();
 				const cachePaintId = ++this._nextCachedGraphPaintId;
-				this._cachedGraphPaints.set(cachePaintId, { loadId, startedAt });
+				this._cachedGraphPaints.set(cachePaintId, {
+					loadId,
+					startedAt,
+					registeredAt: performance.now(),
+				});
+				this.pruneCachedGraphPaints();
 				view.webview.postMessage({
 					type: 'commits',
 					commits: graphData.map(node => ({
@@ -491,7 +500,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private pruneCachedGraphPaints(): void {
 		const staleBefore = performance.now() - CACHED_GRAPH_PAINT_TTL_MS;
 		for (const [paintId, paint] of this._cachedGraphPaints) {
-			if (paint.startedAt < staleBefore) {
+			if (paint.registeredAt < staleBefore) {
 				this._cachedGraphPaints.delete(paintId);
 			}
 		}
@@ -501,7 +510,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		const oldest = [...this._cachedGraphPaints.entries()]
-			.sort(([, left], [, right]) => left.startedAt - right.startedAt);
+			.sort(([, left], [, right]) => left.registeredAt - right.registeredAt);
 		for (const [paintId] of oldest.slice(0, this._cachedGraphPaints.size - MAX_PENDING_CACHED_GRAPH_PAINTS)) {
 			this._cachedGraphPaints.delete(paintId);
 		}

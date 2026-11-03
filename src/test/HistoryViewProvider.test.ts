@@ -172,11 +172,24 @@ suite('HistoryViewProvider cache policy', () => {
 		const cancelled = (provider as any)._cancelledPerformanceSnapshots as Map<unknown, unknown>;
 		paints.set(1, { loadId: 1, startedAt: performance.now(), registeredAt: performance.now() });
 		cancelled.set({}, provider.getLastPerformanceSnapshot());
+		(provider as any)._cancellationRequestedAt = { token: {}, startedAt: performance.now() };
 
 		provider.dispose();
 
 		assert.strictEqual(paints.size, 0);
 		assert.strictEqual(cancelled.size, 0);
+		assert.strictEqual((provider as any)._cancellationRequestedAt, undefined);
+	});
+
+	test('does not record timing for a load begun after disposal', async () => {
+		provider.dispose();
+		const cancellation = new vscode.CancellationTokenSource();
+		cancellation.cancel();
+
+		await (provider as any).loadGitHistory(false, cancellation.token);
+
+		assert.strictEqual((provider as any)._cancelledPerformanceSnapshots.size, 0);
+		cancellation.dispose();
 	});
 
 	test('records repository discovery timing when discovery fails', async () => {

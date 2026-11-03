@@ -172,11 +172,24 @@ suite('HistoryViewProvider cache policy', () => {
 		const cancelled = (provider as any)._cancelledPerformanceSnapshots as Map<unknown, unknown>;
 		paints.set(1, { loadId: 1, startedAt: performance.now(), registeredAt: performance.now() });
 		cancelled.set({}, provider.getLastPerformanceSnapshot());
+		(provider as any)._cancellationRequestedAt = { token: {}, startedAt: performance.now() };
 
 		provider.dispose();
 
 		assert.strictEqual(paints.size, 0);
 		assert.strictEqual(cancelled.size, 0);
+		assert.strictEqual((provider as any)._cancellationRequestedAt, undefined);
+	});
+
+	test('does not record timing for a load begun after disposal', async () => {
+		provider.dispose();
+		const cancellation = new vscode.CancellationTokenSource();
+		cancellation.cancel();
+
+		await (provider as any).loadGitHistory(false, cancellation.token);
+
+		assert.strictEqual((provider as any)._cancelledPerformanceSnapshots.size, 0);
+		cancellation.dispose();
 	});
 
 	test('records repository discovery timing when discovery fails', async () => {
@@ -328,6 +341,24 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.ok(timing.gitFetchMs !== undefined && timing.gitFetchMs >= 0);
 		assert.ok(timing.cancellationAcknowledgementMs !== undefined);
 		assert.ok(timing.cancellationAcknowledgementMs >= 0);
+	});
+
+	test('does not treat a cancelled load as complete after disposal', async () => {
+		let signalExecuteStarted: (() => void) | undefined;
+		const executeStarted = new Promise<void>(resolve => { signalExecuteStarted = resolve; });
+		GitService.runGit = async (_repoPath, _args, cancellationToken) =>
+			new Promise((_, reject) => {
+				signalExecuteStarted?.();
+				cancellationToken?.onCancellationRequested(() => reject(new GitCommandCancelledError()));
+			});
+
+		const refresh = provider.refresh(true);
+		await executeStarted;
+		provider.dispose();
+		await refresh;
+
+		assert.strictEqual(messages.some(message => message.type === 'loading' && message.state === false), false);
+		assert.strictEqual((provider as any)._lastCompletedPerformanceSnapshotLoadId, 0);
 	});
 
 	test('restarts a cancelled initial load once the visible view is idle', async () => {

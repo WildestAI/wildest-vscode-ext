@@ -39,6 +39,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _nextCachedGraphPaintId = 0;
 	private _nextHistoryLoadId = 0;
 	private _lastCompletedPerformanceSnapshotLoadId = 0;
+	private _isDisposed = false;
 	private readonly _cachedGraphPaints = new Map<number, {
 		loadId: number;
 		startedAt: number;
@@ -118,6 +119,10 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 	/** Release repository watchers and pending refreshes when the extension unloads. */
 	public dispose(): void {
+		if (this._isDisposed) {
+			return;
+		}
+		this._isDisposed = true;
 		for (const disposables of this._repositoryWatchers.values()) {
 			for (const disposable of disposables) {
 				disposable.dispose();
@@ -131,6 +136,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 		this._cachedGraphPaints.clear();
 		this._cancelledPerformanceSnapshots.clear();
 		this.cancelRefresh();
+		this._cancellationRequestedAt = undefined;
 	}
 
 	/**
@@ -305,7 +311,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 	private async loadGitHistory(forceRefresh: boolean, cancellationToken?: vscode.CancellationToken): Promise<void> {
 		const view = this._view;
-		if (!view) {
+		if (this._isDisposed || !view) {
 			return;
 		}
 		if (cancellationToken?.isCancellationRequested) {
@@ -448,8 +454,10 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				totalMs: performance.now() - startedAt,
 			};
 			if (cancellationToken?.isCancellationRequested) {
-				this._cancelledPerformanceSnapshots.set(cancellationToken, snapshot);
-			} else if (this._view === view) {
+				if (!this._isDisposed) {
+					this._cancelledPerformanceSnapshots.set(cancellationToken, snapshot);
+				}
+			} else if (!this._isDisposed && this._view === view) {
 				this._lastPerformanceSnapshot = snapshot;
 				this._lastCompletedPerformanceSnapshotLoadId = loadId;
 				// Ensure loading state is turned off in case of unexpected errors.

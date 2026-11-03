@@ -453,9 +453,11 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				cancellationAcknowledgementMs: undefined,
 				totalMs: performance.now() - startedAt,
 			};
-			if (cancellationToken?.isCancellationRequested && !this._isDisposed) {
-				this._cancelledPerformanceSnapshots.set(cancellationToken, snapshot);
-			} else if (this._view === view) {
+			if (cancellationToken?.isCancellationRequested) {
+				if (!this._isDisposed) {
+					this._cancelledPerformanceSnapshots.set(cancellationToken, snapshot);
+				}
+			} else if (!this._isDisposed && this._view === view) {
 				this._lastPerformanceSnapshot = snapshot;
 				this._lastCompletedPerformanceSnapshotLoadId = loadId;
 				// Ensure loading state is turned off in case of unexpected errors.

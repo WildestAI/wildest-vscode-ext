@@ -343,6 +343,24 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.ok(timing.cancellationAcknowledgementMs >= 0);
 	});
 
+	test('does not treat a cancelled load as complete after disposal', async () => {
+		let signalExecuteStarted: (() => void) | undefined;
+		const executeStarted = new Promise<void>(resolve => { signalExecuteStarted = resolve; });
+		GitService.runGit = async (_repoPath, _args, cancellationToken) =>
+			new Promise((_, reject) => {
+				signalExecuteStarted?.();
+				cancellationToken?.onCancellationRequested(() => reject(new GitCommandCancelledError()));
+			});
+
+		const refresh = provider.refresh(true);
+		await executeStarted;
+		provider.dispose();
+		await refresh;
+
+		assert.strictEqual(messages.some(message => message.type === 'loading' && message.state === false), false);
+		assert.strictEqual((provider as any)._lastCompletedPerformanceSnapshotLoadId, 0);
+	});
+
 	test('restarts a cancelled initial load once the visible view is idle', async () => {
 		const view = (provider as any)._view;
 		view.visible = true;

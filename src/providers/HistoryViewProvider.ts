@@ -6,6 +6,12 @@ import { GitCommit, GitGraphNode } from '../utils/types';
 import { GitHistoryCache } from '../services/GitHistoryCache';
 import { CliCancelledError } from '../services/CliService';
 
+// A webview acknowledgement is asynchronous and may never arrive when a view
+// is hidden or disposed. Keep enough pending entries for normal rendering, but
+// do not let repeated refreshes retain timing metadata indefinitely.
+const MAX_PENDING_CACHED_GRAPH_PAINTS = 32;
+const CACHED_GRAPH_PAINT_TTL_MS = 30_000;
+
 export interface HistoryPerformanceSnapshot {
 	source: 'cache' | 'git' | 'none';
 	repositoryDiscoveryMs: number;
@@ -33,7 +39,12 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _nextCachedGraphPaintId = 0;
 	private _nextHistoryLoadId = 0;
 	private _lastCompletedPerformanceSnapshotLoadId = 0;
-	private readonly _cachedGraphPaints = new Map<number, { loadId: number; startedAt: number; measuredMs?: number }>();
+	private readonly _cachedGraphPaints = new Map<number, {
+		loadId: number;
+		startedAt: number;
+		registeredAt: number;
+		measuredMs?: number;
+	}>();
 	private _cancellationRequestedAt?: { token: vscode.CancellationToken; startedAt: number };
 	private readonly _cancelledPerformanceSnapshots = new Map<vscode.CancellationToken, HistoryPerformanceSnapshot>();
 	private _lastPerformanceSnapshot: HistoryPerformanceSnapshot = {
@@ -117,6 +128,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			clearTimeout(timer);
 		}
 		this._repositoryRefreshTimers.clear();
+		this._cachedGraphPaints.clear();
+		this._cancelledPerformanceSnapshots.clear();
 		this.cancelRefresh();
 	}
 
@@ -345,7 +358,12 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				const graphData = this.buildGraphData(cached.commits, cached.graphLines);
 				graphBuildMs += performance.now() - graphBuildStartedAt;
 				const cachePaintId = ++this._nextCachedGraphPaintId;
-				this._cachedGraphPaints.set(cachePaintId, { loadId, startedAt });
+				this._cachedGraphPaints.set(cachePaintId, {
+					loadId,
+					startedAt,
+					registeredAt: performance.now(),
+				});
+				this.pruneCachedGraphPaints();
 				view.webview.postMessage({
 					type: 'commits',
 					commits: graphData.map(node => ({
@@ -456,6 +474,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private recordCachedGraphFirstPaint(cachePaintId: number): void {
+		this.pruneCachedGraphPaints();
 		const pendingPaint = this._cachedGraphPaints.get(cachePaintId);
 		if (!pendingPaint) {
 			return;
@@ -475,6 +494,26 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			...this._lastPerformanceSnapshot,
 			firstUsableGraphMs: pendingPaint.measuredMs,
 		};
+	}
+
+	/** Bound pending webview paint timing metadata when a view never acknowledges it. */
+	private pruneCachedGraphPaints(): void {
+		const staleBefore = performance.now() - CACHED_GRAPH_PAINT_TTL_MS;
+		for (const [paintId, paint] of this._cachedGraphPaints) {
+			if (paint.registeredAt < staleBefore) {
+				this._cachedGraphPaints.delete(paintId);
+			}
+		}
+
+		if (this._cachedGraphPaints.size <= MAX_PENDING_CACHED_GRAPH_PAINTS) {
+			return;
+		}
+
+		const oldest = [...this._cachedGraphPaints.entries()]
+			.sort(([, left], [, right]) => left.registeredAt - right.registeredAt);
+		for (const [paintId] of oldest.slice(0, this._cachedGraphPaints.size - MAX_PENDING_CACHED_GRAPH_PAINTS)) {
+			this._cachedGraphPaints.delete(paintId);
+		}
 	}
 
 	private async getGitCommits(

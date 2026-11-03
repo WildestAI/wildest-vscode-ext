@@ -112,6 +112,73 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(provider.getLastPerformanceSnapshot().firstUsableGraphMs, undefined);
 	});
 
+	test('bounds unacknowledged cached paint timing metadata', () => {
+		const paints = (provider as any)._cachedGraphPaints as Map<number, {
+			loadId: number;
+			startedAt: number;
+			registeredAt: number;
+		}>;
+		const now = performance.now();
+		paints.set(1, { loadId: 1, startedAt: now - 30_001, registeredAt: now - 30_001 });
+		for (let paintId = 2; paintId <= 35; paintId++) {
+			paints.set(paintId, { loadId: paintId, startedAt: now + paintId, registeredAt: now + paintId });
+		}
+
+		(provider as any).pruneCachedGraphPaints();
+
+		assert.strictEqual(paints.has(1), false, 'expired acknowledgements are discarded');
+		assert.strictEqual(paints.size, 32, 'pending acknowledgements are capped');
+		assert.strictEqual(paints.has(2), false, 'the oldest pending acknowledgement is discarded first');
+		assert.strictEqual(paints.has(3), false, 'the next oldest acknowledgement is also discarded');
+	});
+
+	test('keeps paint expiry separate from elapsed load timing', () => {
+		const paints = (provider as any)._cachedGraphPaints as Map<number, {
+			loadId: number;
+			startedAt: number;
+			registeredAt: number;
+		}>;
+		const now = performance.now();
+		paints.set(1, { loadId: 1, startedAt: now - 30_001, registeredAt: now });
+		(provider as any)._lastCompletedPerformanceSnapshotLoadId = 1;
+
+		(provider as any).recordCachedGraphFirstPaint(1);
+
+		assert.strictEqual(paints.has(1), false, 'the acknowledgement is retained long enough to record');
+		assert.ok(provider.getLastPerformanceSnapshot().firstUsableGraphMs! >= 30_000);
+	});
+
+	test('enforces the cached paint limit after registration', async () => {
+		const paints = (provider as any)._cachedGraphPaints as Map<number, {
+			loadId: number;
+			startedAt: number;
+			registeredAt: number;
+		}>;
+		const now = performance.now();
+		for (let paintId = 1; paintId <= 32; paintId++) {
+			paints.set(paintId, { loadId: paintId, startedAt: now, registeredAt: now - 1_000 + paintId });
+		}
+		(provider as any)._nextCachedGraphPaintId = 32;
+		GitHistoryCache.update(repoRoot, [commit], ['* ']);
+
+		await (provider as any).loadGitHistory(false);
+
+		assert.strictEqual(paints.size, 32, 'registration keeps the cache within its limit');
+		assert.strictEqual(paints.has(1), false, 'the oldest pending acknowledgement is discarded');
+	});
+
+	test('clears pending timing metadata when disposed', () => {
+		const paints = (provider as any)._cachedGraphPaints as Map<number, unknown>;
+		const cancelled = (provider as any)._cancelledPerformanceSnapshots as Map<unknown, unknown>;
+		paints.set(1, { loadId: 1, startedAt: performance.now(), registeredAt: performance.now() });
+		cancelled.set({}, provider.getLastPerformanceSnapshot());
+
+		provider.dispose();
+
+		assert.strictEqual(paints.size, 0);
+		assert.strictEqual(cancelled.size, 0);
+	});
+
 	test('records repository discovery timing when discovery fails', async () => {
 		GitService.getRepositories = async () => {
 			await new Promise<void>(resolve => setTimeout(resolve, 5));

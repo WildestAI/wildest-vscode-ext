@@ -41,9 +41,9 @@ export function vsixListCommand(vsix, platform) {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        '& { param([string]$Archive) Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::OpenRead($Archive).Entries | ForEach-Object { $_.FullName } }',
-        vsix,
+        'Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::OpenRead($env:WILDESTAI_VSIX_PATH).Entries | ForEach-Object { $_.FullName }',
       ],
+      env: { WILDESTAI_VSIX_PATH: vsix },
     };
   }
   return { executable: 'unzip', args: ['-Z1', vsix] };

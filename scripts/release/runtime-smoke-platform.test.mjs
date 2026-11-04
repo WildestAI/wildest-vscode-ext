@@ -28,13 +28,15 @@ test('quotes npm arguments containing Windows paths when using the command shell
   assert.equal(npmArgument(pathWithSpaces, 'linux'), pathWithSpaces);
 });
 
-test('lists VSIX paths with Windows built-in ZIP support rather than Unix unzip', () => {
+test('passes Windows VSIX paths through the environment rather than PowerShell command text', () => {
   const vsix = 'C:\\Users\\Example User\\artifact.vsix';
   const command = vsixListCommand(vsix, 'win32');
   assert.equal(command.executable, 'powershell.exe');
   assert.deepEqual(command.args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-Command']);
   assert.match(command.args[3], /System\.IO\.Compression\.FileSystem/);
-  assert.equal(command.args[4], vsix);
+  assert.match(command.args[3], /\$env:WILDESTAI_VSIX_PATH/);
+  assert.deepEqual(command.env, { WILDESTAI_VSIX_PATH: vsix });
+  assert.equal(command.args.includes(vsix), false);
 });
 
 test('uses unzip to list VSIX paths on Unix release platforms', () => {

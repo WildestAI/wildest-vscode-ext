@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
+import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes, vsixListCommand } from './runtime-smoke-platform.mjs';
 
 test('requires executable-mode validation for supported Unix release platforms', () => {
   assert.equal(requiresUnixExecutableModes('linux'), true);
@@ -26,4 +26,20 @@ test('quotes npm arguments containing Windows paths when using the command shell
   const pathWithSpaces = 'C:\\Users\\Example User\\AppData\\Local\\Temp\\artifact.vsix';
   assert.equal(npmArgument(pathWithSpaces, 'win32'), `"${pathWithSpaces}"`);
   assert.equal(npmArgument(pathWithSpaces, 'linux'), pathWithSpaces);
+});
+
+test('lists VSIX paths with Windows built-in ZIP support rather than Unix unzip', () => {
+  const vsix = 'C:\\Users\\Example User\\artifact.vsix';
+  const command = vsixListCommand(vsix, 'win32');
+  assert.equal(command.executable, 'powershell.exe');
+  assert.deepEqual(command.args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-Command']);
+  assert.match(command.args[3], /System\.IO\.Compression\.FileSystem/);
+  assert.equal(command.args[4], vsix);
+});
+
+test('uses unzip to list VSIX paths on Unix release platforms', () => {
+  assert.deepEqual(vsixListCommand('/tmp/artifact.vsix', 'linux'), {
+    executable: 'unzip',
+    args: ['-Z1', '/tmp/artifact.vsix'],
+  });
 });

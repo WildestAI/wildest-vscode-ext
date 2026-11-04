@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { REQUIRED_ASSETS } from './release-contract.mjs';
 import { requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
+import { shouldCopyPreflightPath } from './preflight-workspace.mjs';
 
 const workspace = await mkdtemp(join(tmpdir(), 'wildestai-release-preflight-'));
-const ignoredPaths = new Set(['.git', 'node_modules', '.vscode-test', 'bin', '.release-preflight']);
 try {
   await cp('.', workspace, {
     recursive: true,
-    filter: source => !ignoredPaths.has(source.split('/').at(-1)),
+    filter: shouldCopyPreflightPath,
   });
   await symlink(resolve('node_modules'), join(workspace, 'node_modules'));
   const bin = join(workspace, 'bin');

@@ -14,3 +14,8 @@ export function npmExecutionOptions(platform) {
   // Node only runs .cmd launchers via a shell on Windows.
   return platform === 'win32' ? { shell: true } : {};
 }
+
+export function npmArgument(value, platform) {
+  // shell: true sends the command through cmd.exe, which splits unquoted spaces.
+  return platform === 'win32' ? `"${value}"` : value;
+}

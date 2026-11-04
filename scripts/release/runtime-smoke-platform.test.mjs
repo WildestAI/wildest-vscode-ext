@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { npmExecutable, npmExecutionOptions, requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
+import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
 
 test('requires executable-mode validation for supported Unix release platforms', () => {
   assert.equal(requiresUnixExecutableModes('linux'), true);
@@ -20,4 +20,10 @@ test('uses the Windows command shim when invoking npm from Node', () => {
 test('uses a shell only for the Windows npm command shim', () => {
   assert.deepEqual(npmExecutionOptions('win32'), { shell: true });
   assert.deepEqual(npmExecutionOptions('linux'), {});
+});
+
+test('quotes npm arguments containing Windows paths when using the command shell', () => {
+  const pathWithSpaces = 'C:\\Users\\Example User\\AppData\\Local\\Temp\\artifact.vsix';
+  assert.equal(npmArgument(pathWithSpaces, 'win32'), `"${pathWithSpaces}"`);
+  assert.equal(npmArgument(pathWithSpaces, 'linux'), pathWithSpaces);
 });

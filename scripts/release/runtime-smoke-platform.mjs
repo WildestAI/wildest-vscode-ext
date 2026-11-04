@@ -5,3 +5,7 @@
 export function requiresUnixExecutableModes(platform) {
   return platform !== 'win32';
 }
+
+export function npmExecutable(platform) {
+  return platform === 'win32' ? 'npm.cmd' : 'npm';
+}

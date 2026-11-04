@@ -12,7 +12,9 @@ try {
     recursive: true,
     filter: shouldCopyPreflightPath,
   });
-  await symlink(resolve('node_modules'), join(workspace, 'node_modules'));
+  // A Windows directory junction works without the symlink privilege required
+  // by ordinary (non-Developer-Mode) Windows accounts.
+  await symlink(resolve('node_modules'), join(workspace, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   const bin = join(workspace, 'bin');
   const vsix = join(workspace, '.release-preflight', 'wildestai-preflight.vsix');
   await mkdir(bin, { recursive: true });

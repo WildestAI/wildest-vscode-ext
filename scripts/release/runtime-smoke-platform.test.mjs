@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { npmExecutable, requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
+import { npmExecutable, npmExecutionOptions, requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
 
 test('requires executable-mode validation for supported Unix release platforms', () => {
   assert.equal(requiresUnixExecutableModes('linux'), true);
@@ -15,4 +15,9 @@ test('uses the Windows command shim when invoking npm from Node', () => {
   assert.equal(npmExecutable('win32'), 'npm.cmd');
   assert.equal(npmExecutable('linux'), 'npm');
   assert.equal(npmExecutable('darwin'), 'npm');
+});
+
+test('uses a shell only for the Windows npm command shim', () => {
+  assert.deepEqual(npmExecutionOptions('win32'), { shell: true });
+  assert.deepEqual(npmExecutionOptions('linux'), {});
 });

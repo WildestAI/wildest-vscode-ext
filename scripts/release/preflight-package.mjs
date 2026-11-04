@@ -3,7 +3,7 @@ import { chmod, cp, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { REQUIRED_ASSETS } from './release-contract.mjs';
-import { npmExecutable, requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
+import { npmExecutable, npmExecutionOptions, requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
 import { shouldCopyPreflightPath } from './preflight-workspace.mjs';
 
 const workspace = await mkdtemp(join(tmpdir(), 'wildestai-release-preflight-'));
@@ -21,9 +21,9 @@ try {
     await writeFile(path, `preflight placeholder for ${asset}\n`);
     if (!asset.endsWith('.exe')) await chmod(path, 0o755);
   }
-  execFileSync(npmExecutable(process.platform), ['run', 'package'], { cwd: workspace, stdio: 'inherit' });
+  execFileSync(npmExecutable(process.platform), ['run', 'package'], { cwd: workspace, stdio: 'inherit', ...npmExecutionOptions(process.platform) });
   await mkdir(join(workspace, '.release-preflight'), { recursive: true });
-  execFileSync(npmExecutable(process.platform), ['run', 'package:vsix', '--', '--out', vsix], { cwd: workspace, stdio: 'inherit' });
+  execFileSync(npmExecutable(process.platform), ['run', 'package:vsix', '--', '--out', vsix], { cwd: workspace, stdio: 'inherit', ...npmExecutionOptions(process.platform) });
   const entries = execFileSync('unzip', ['-Z1', vsix], { encoding: 'utf8' });
   for (const asset of REQUIRED_ASSETS) {
     if (!entries.split(/\r?\n/).includes(`extension/bin/${asset}`)) throw new Error(`VSIX is missing ${asset}`);

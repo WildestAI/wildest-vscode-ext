@@ -9,3 +9,8 @@ export function requiresUnixExecutableModes(platform) {
 export function npmExecutable(platform) {
   return platform === 'win32' ? 'npm.cmd' : 'npm';
 }
+
+export function npmExecutionOptions(platform) {
+  // Node only runs .cmd launchers via a shell on Windows.
+  return platform === 'win32' ? { shell: true } : {};
+}

@@ -232,7 +232,10 @@
     "package:vsix": "vsce package --no-dependencies",
     "package:preflight": "node scripts/release/preflight-package.mjs",
     "publish:vscode": "vsce publish",
-    "publish:openvsx": "ovsx publish"
+    "publish:openvsx": "ovsx publish",
+    "verify:cli-contract": "npm run compile-tests && node scripts/release/verify-cli-contract.mjs",
+    "sync:cli-contract": "node scripts/release/sync-cli-contract.mjs",
+    "test:cli-contract-sync": "node --test scripts/release/sync-cli-contract.test.mjs"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

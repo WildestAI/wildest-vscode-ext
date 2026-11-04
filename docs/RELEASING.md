@@ -16,7 +16,14 @@ The tag workflow downloads the locked release, rejects draft/prerelease or unexp
 
 ## Eligible CLI release handoff
 
-`Prepare verified extension release handoff` polls the public wild CLI releases hourly and selects the highest final immutable `cli-v<semver>-<commit>` release that is newer than the extension. The matching extension version is the CLI release semver. It validates that the CLI GitHub release is published and final, downloads and checksum-verifies its locked assets, then creates a **release pull request only**. The PR changes `package.json`, `package-lock.json`, and the CLI release input together. An explicit workflow dispatch may provide both version and tag instead; providing just one is rejected.
+`Prepare verified extension release handoff` polls the public wild CLI releases hourly and selects the highest final immutable `cli-v<semver>-<commit>` release that is newer than the extension. The matching extension version is the CLI release semver. It validates that the CLI GitHub release is published and final, downloads and checksum-verifies its locked assets, then creates a **release pull request only**. The PR changes `package.json`, `package-lock.json`, and the CLI release input together.
+
+Before the PR is opened, the handoff also keeps the extension on the CLI's own contract:
+
+- `scripts/release/sync-cli-contract.mjs` copies the CLI release's packaged DiffGraph schema and canonical example into `src/contract/` and `src/test/fixtures/`, and records the source tag and SHA-256 hashes in `src/contract/cli-contract-source.json`. The extension's validator (`src/utils/diffGraphV2.ts`) interprets that schema, so an additive schema minor needs no code change. Unknown properties and enum values are still rejected wherever the CLI's schema rejects them.
+- `scripts/release/verify-cli-contract.mjs` runs the released `wild-linux-x64` binary in a throwaway repository with the extension's own arguments: unstaged, `--staged`, a commit range, and the default HTML view. It validates every JSON artifact with the compiled extension validator. If the real CLI output fails the contract, no PR is opened. The tagged publisher runs the same gate on the bundled binary before packaging.
+
+The PR may therefore also change the three contract files; any other change fails the handoff. An explicit workflow dispatch may provide both version and tag instead; providing just one is rejected.
 
 After normal review and merge, `Tag merged verified extension release candidate` runs only for a `github-actions[bot]` PR whose branch is exactly `release/extension-v<package.json version>`. It repeats the CLI contract, published/final-release, checksum, and clean VSIX checks, then creates only the exact matching absent `v<package.json version>` tag. It refuses to overwrite a tag. The existing tagged workflow remains the sole publisher and repeats its immutable CLI, checksum, extension-test, and VSIX gates before either marketplace is contacted.
 

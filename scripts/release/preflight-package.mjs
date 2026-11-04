@@ -3,6 +3,7 @@ import { chmod, cp, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { REQUIRED_ASSETS } from './release-contract.mjs';
+import { requiresUnixExecutableModes } from './runtime-smoke-platform.mjs';
 
 const workspace = await mkdtemp(join(tmpdir(), 'wildestai-release-preflight-'));
 const ignoredPaths = new Set(['.git', 'node_modules', '.vscode-test', 'bin', '.release-preflight']);
@@ -29,11 +30,16 @@ try {
   }
   const extracted = join(workspace, '.release-preflight', 'extracted');
   execFileSync('unzip', ['-qq', vsix, '-d', extracted]);
-  for (const asset of REQUIRED_ASSETS.filter(asset => !asset.endsWith('.exe'))) {
-    const mode = (await stat(join(extracted, 'extension', 'bin', asset))).mode;
-    if ((mode & 0o111) === 0) throw new Error(`VSIX does not preserve execute permission for ${asset}`);
+  // Windows does not use POSIX execute bits; its packaged `.exe` artifact is
+  // still covered by the required-path check above. Validate Unix executable
+  // modes only where the release runtime relies on them.
+  if (requiresUnixExecutableModes(process.platform)) {
+    for (const asset of REQUIRED_ASSETS.filter(asset => !asset.endsWith('.exe'))) {
+      const mode = (await stat(join(extracted, 'extension', 'bin', asset))).mode;
+      if ((mode & 0o111) === 0) throw new Error(`VSIX does not preserve execute permission for ${asset}`);
+    }
   }
-  console.log(`VSIX packages all ${REQUIRED_ASSETS.length} required CLI binary paths with executable Unix artifacts.`);
+  console.log(`VSIX packages all ${REQUIRED_ASSETS.length} required CLI binary paths${requiresUnixExecutableModes(process.platform) ? ' with executable Unix artifacts' : ''}.`);
 } finally {
   await rm(workspace, { recursive: true, force: true });
 }

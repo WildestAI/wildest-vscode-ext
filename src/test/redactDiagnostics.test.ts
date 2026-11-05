@@ -33,6 +33,23 @@ suite('redactDiagnostics', () => {
 		assert.match(redacted, /api_key=\[REDACTED\]&token=\[REDACTED\]/);
 	});
 
+	test('redacts local account names while preserving actionable path suffixes', () => {
+		const detail = [
+			'CLI path: /home/alice/.vscode/extensions/wild/bin/wild-linux-x64',
+			'Workspace: /Users/Bob/Library/Caches/wildestai-runtime-probe-123',
+			'Windows CLI: C:\\Users\\Carol\\.vscode\\extensions\\wild-win.exe',
+		].join('\n');
+
+		const redacted = redactDiagnostics(detail);
+
+		assert.ok(!redacted.includes('alice'));
+		assert.ok(!redacted.includes('Bob'));
+		assert.ok(!redacted.includes('Carol'));
+		assert.match(redacted, /\/home\/\[REDACTED\]\/.vscode\/extensions\/wild\/bin\/wild-linux-x64/);
+		assert.match(redacted, /\/Users\/\[REDACTED\]\/Library\/Caches\/wildestai-runtime-probe-123/);
+		assert.match(redacted, /C:\\Users\\\[REDACTED\]\\.vscode\\extensions\\wild-win\.exe/);
+	});
+
 	test('preserves non-sensitive remediation context', () => {
 		const detail = 'The CLI health probe failed. Reinstall the extension and run wild --version.';
 		assert.strictEqual(redactDiagnostics(detail), detail);

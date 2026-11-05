@@ -35,16 +35,16 @@ suite('redactDiagnostics', () => {
 
 	test('redacts local account names while preserving actionable path suffixes', () => {
 		const detail = [
-			'CLI path: /home/alice/.vscode/extensions/wild/bin/wild-linux-x64',
-			'Workspace: /Users/Bob/Library/Caches/wildestai-runtime-probe-123',
-			'Windows CLI: C:\\Users\\Carol\\.vscode\\extensions\\wild-win.exe',
+			'CLI path: /home/Alice Smith/.vscode/extensions/wild/bin/wild-linux-x64',
+			'Workspace: /Users/Bob Jones/Library/Caches/wildestai-runtime-probe-123',
+			'Windows CLI: C:\\Users\\Carol White\\.vscode\\extensions\\wild-win.exe',
 		].join('\n');
 
 		const redacted = redactDiagnostics(detail);
 
-		assert.ok(!redacted.includes('alice'));
-		assert.ok(!redacted.includes('Bob'));
-		assert.ok(!redacted.includes('Carol'));
+		assert.ok(!redacted.includes('Alice Smith'));
+		assert.ok(!redacted.includes('Bob Jones'));
+		assert.ok(!redacted.includes('Carol White'));
 		assert.match(redacted, /\/home\/\[REDACTED\]\/.vscode\/extensions\/wild\/bin\/wild-linux-x64/);
 		assert.match(redacted, /\/Users\/\[REDACTED\]\/Library\/Caches\/wildestai-runtime-probe-123/);
 		assert.match(redacted, /C:\\Users\\\[REDACTED\]\\.vscode\\extensions\\wild-win\.exe/);

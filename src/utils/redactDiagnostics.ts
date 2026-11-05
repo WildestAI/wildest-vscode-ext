@@ -9,8 +9,8 @@ export function redactDiagnostics(value: string): string {
 	return value
 		// Diagnostics can contain an executable or temporary-workspace path. Preserve
 		// the useful suffix while removing the local account name before users share it.
-		.replace(/(\/(?:home|Users)\/)[^\/\s]+/g, '$1[REDACTED]')
-		.replace(/([A-Z]:\\Users\\)[^\\\s]+/gi, '$1[REDACTED]')
+		.replace(/(\/(?:home|Users)\/)[^\/\r\n]+/g, '$1[REDACTED]')
+		.replace(/([A-Z]:\\Users\\)[^\\\r\n]+/gi, '$1[REDACTED]')
 		.replace(
 			/(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi,
 			'$1[REDACTED]:[REDACTED]@',

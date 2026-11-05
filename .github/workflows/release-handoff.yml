@@ -162,12 +162,18 @@ jobs:
           branch="release/extension-v${EXTENSION_VERSION}"
           git switch -c "$branch"
           node scripts/release/prepare-release-handoff.mjs "$EXTENSION_VERSION" "$CLI_RELEASE_TAG"
-          # Follow the CLI's own published DiffGraph contract, then prove the
-          # released binary's real output passes the extension's validator, so
-          # an incompatible CLI never reaches a release PR.
+          # Follow the CLI's own published DiffGraph contract (needs the API token).
           node scripts/release/sync-cli-contract.mjs "$CLI_RELEASE_TAG"
+      # Runs the downloaded CLI binary, so this step deliberately has no token:
+      # a compromised release must not be able to write to this repository.
+      - name: Prove the released CLI's real output passes the extension contract
+        if: steps.handoff.outputs.skip != 'true'
+        run: |
           chmod +x "${RUNNER_TEMP}/cli-release/wild-linux-x64"
           npm run verify:cli-contract -- "${RUNNER_TEMP}/cli-release/wild-linux-x64"
+      - name: Check the release candidate package and change set
+        if: steps.handoff.outputs.skip != 'true'
+        run: |
           npm run verify:release-input
           npm run package:preflight
           git diff --check
@@ -182,7 +188,6 @@ jobs:
               console.error(`Unexpected release candidate change set. Missing: ${missing.join(", ") || "none"}. Unexpected: ${unexpected.join(", ") || "none"}.`);
               process.exit(1);
             }'
-
       - name: Commit, push, and safely create or recover the release candidate PR
         if: steps.handoff.outputs.skip != 'true'
         env:

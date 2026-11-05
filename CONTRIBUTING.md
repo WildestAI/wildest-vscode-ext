@@ -81,6 +81,13 @@ npm run sync:cli-contract -- --from-dir ../wild
 npm run verify:cli-contract -- ../wild/.venv/bin/wild
 ```
 
+On Windows the virtual environment's executable is under `Scripts`:
+
+```powershell
+npm run sync:cli-contract -- --from-dir ..\wild
+npm run verify:cli-contract -- ..\wild\.venv\Scripts\wild.exe
+```
+
 ### Development Workflow
 
 1. **Make your changes** in the source code

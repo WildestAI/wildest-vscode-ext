@@ -42,9 +42,15 @@ if (!fs.existsSync(validatorPath)) {
 }
 const { validateDiffGraphArtifact } = require(validatorPath);
 
-// Keep Git independent of the runner's user/system configuration.
+// The binary under test is untrusted input: it gets a minimal environment, so
+// no credential in this process (e.g. GH_TOKEN in CI) can reach it, a
+// throwaway HOME, and Git independent of user/system configuration.
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wild-contract-home-'));
+const passthrough = ['PATH', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'PATHEXT', 'COMSPEC'];
 const env = {
-	...process.env,
+	...Object.fromEntries(passthrough.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])),
+	HOME: home,
+	USERPROFILE: home,
 	GIT_CONFIG_GLOBAL: os.devNull,
 	GIT_CONFIG_NOSYSTEM: '1',
 	GIT_AUTHOR_NAME: 'Contract Check',
@@ -55,6 +61,17 @@ const env = {
 const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'wild-contract-'));
 const outputs = fs.mkdtempSync(path.join(os.tmpdir(), 'wild-contract-out-'));
 const git = (...args) => execFileSync('git', args, { cwd: repo, env, encoding: 'utf8' }).trim();
+
+/** Run the CLI; on failure, report its exit status and stderr as readable text. */
+function runCli(label, args) {
+	try {
+		return execFileSync(binary, args, { cwd: repo, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+	} catch (error) {
+		const stderr = String(error.stderr ?? '').trim().split('\n').slice(-5).join('\n');
+		const status = error.status ?? error.signal ?? error.code;
+		fail(`${label}: \`wild ${args.join(' ')}\` exited with ${status}${stderr ? `:\n${stderr}` : ''}`);
+	}
+}
 const write = (file, text) => {
 	fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
 	fs.writeFileSync(path.join(repo, file), text);
@@ -76,7 +93,7 @@ try {
 	git('add', 'README.md');
 	write('pkg/use.py', 'from pkg.lib import Base, f\n\nclass Child(Base):\n    def run(self):\n        return f(2)\n');
 
-	const version = execFileSync(binary, ['--version'], { cwd: repo, env, encoding: 'utf8' }).trim();
+	const version = runCli('version', ['--version']).trim();
 	console.log(`Checking ${version} (${binary})`);
 
 	// The same argument shapes as src/services/DiffService.ts.
@@ -87,7 +104,7 @@ try {
 	};
 	for (const [name, args] of Object.entries(jsonRuns)) {
 		const output = path.join(outputs, `${name}.json`);
-		execFileSync(binary, [...args, '--output', output], { cwd: repo, env, stdio: 'pipe' });
+		runCli(name, [...args, '--output', output]);
 		let artifact;
 		try {
 			artifact = JSON.parse(fs.readFileSync(output, 'utf8'));
@@ -107,7 +124,7 @@ try {
 
 	// The default renderer loads the CLI's own HTML report into the webview.
 	const html = path.join(outputs, 'report.html');
-	execFileSync(binary, ['diff', '--format', 'html', '--output', html, '--no-open'], { cwd: repo, env, stdio: 'pipe' });
+	runCli('html', ['diff', '--format', 'html', '--output', html, '--no-open']);
 	const report = fs.readFileSync(html, 'utf8');
 	if (!/^<!doctype html>/i.test(report) || !report.includes('Content-Security-Policy') || !report.includes('id="diffgraph-artifact"')) {
 		fail('html: the report is not a self-contained DiffGraph HTML document');
@@ -117,4 +134,5 @@ try {
 } finally {
 	fs.rmSync(repo, { recursive: true, force: true });
 	fs.rmSync(outputs, { recursive: true, force: true });
+	fs.rmSync(home, { recursive: true, force: true });
 }

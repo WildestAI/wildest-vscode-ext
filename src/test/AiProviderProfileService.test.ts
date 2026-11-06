@@ -220,6 +220,22 @@ suite('AiProviderProfileService', () => {
 		assert.ok(!failed.detail.includes('secret-value'));
 	});
 
+	test('preflight reports timeouts separately without leaking key material', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		const result = await AiProviderProfileService.preflight(profile, { get: async () => 'secret-value' } as any, async () => {
+			const error = new Error('Provider request timed out: secret-value') as Error & { code?: string };
+			error.code = 'ETIMEDOUT';
+			throw error;
+		});
+
+		assert.strictEqual(result.status, 'connection-timed-out');
+		assert.match(result.detail, /timed out/);
+		assert.match(result.detail, /Deterministic Git and DiffGraph workflows remain available/);
+		assert.ok(!result.detail.includes('secret-value'));
+	});
+
 	test('preflight classifies SecretStorage read failures without sending a request', async () => {
 		const profile = AiProviderProfileService.normalize({
 			provider: 'openai', capabilities: ['prose'], authSource: 'secret-storage',

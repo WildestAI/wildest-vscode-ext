@@ -20,7 +20,7 @@ export interface AiProviderReadiness {
 }
 
 export interface AiProviderPreflight {
-	status: 'disabled' | 'needs-configuration' | 'ready' | 'credentials-rejected' | 'unsupported-model' | 'rate-limited' | 'provider-unavailable' | 'connection-failed';
+	status: 'disabled' | 'needs-configuration' | 'ready' | 'credentials-rejected' | 'unsupported-model' | 'rate-limited' | 'provider-unavailable' | 'connection-timed-out' | 'connection-failed';
 	detail: string;
 }
 
@@ -195,9 +195,22 @@ export class AiProviderProfileService {
 				return { status: 'provider-unavailable', detail: `${profile.provider} is currently unavailable. Deterministic Git and DiffGraph workflows remain available.` };
 			}
 			return { status: 'connection-failed', detail: `The ${profile.provider} preflight returned HTTP ${statusCode}. Check the endpoint configuration and try again.` };
-		} catch {
+		} catch (error) {
+			if (this.isTimeoutError(error)) {
+				return { status: 'connection-timed-out', detail: `The ${profile.provider} preflight timed out. Check the endpoint, network, and proxy settings, then try again. Deterministic Git and DiffGraph workflows remain available.` };
+			}
 			return { status: 'connection-failed', detail: `Could not connect to ${profile.provider}. Check the endpoint, network, and proxy settings, then try again.` };
 		}
+	}
+
+	private static isTimeoutError(error: unknown): boolean {
+		if (!error || typeof error !== 'object') {
+			return false;
+		}
+		const candidate = error as { code?: unknown; name?: unknown; message?: unknown };
+		return candidate.code === 'ETIMEDOUT'
+			|| candidate.name === 'TimeoutError'
+			|| (typeof candidate.message === 'string' && /\b(?:timed?\s*out|timeout)\b/i.test(candidate.message));
 	}
 
 	private static modelEndpoint(profile: AiProviderProfile): URL {

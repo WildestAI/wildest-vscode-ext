@@ -10,6 +10,9 @@ export const PROGRESS_TIMELINE_VERSION = 1 as const;
 export type ProgressCheckStatus = 'passed' | 'failed' | 'running' | 'unknown';
 export type ProgressEventKind = 'working-tree' | 'commit' | 'check';
 
+const PROGRESS_EVENT_KINDS = new Set<ProgressEventKind>(['working-tree', 'commit', 'check']);
+const PROGRESS_CHECK_STATUSES = new Set<ProgressCheckStatus>(['passed', 'failed', 'running', 'unknown']);
+
 export interface ProgressRepository {
 	/** Stable workspace-local repository identifier; callers must not upload it. */
 	id: string;
@@ -81,14 +84,40 @@ function validateEvents(events: readonly ProgressEvent[], repositoryIds: Readonl
 			throw new Error(`Timeline event has a duplicate id: ${event.id}`);
 		}
 		eventIds.add(event.id);
-		if (!repositoryIds.has(event.repositoryId)) {
+		if (typeof event.repositoryId !== 'string' || !repositoryIds.has(event.repositoryId)) {
 			throw new Error(`Timeline event references an unknown repository: ${event.repositoryId}`);
+		}
+		if (!PROGRESS_EVENT_KINDS.has(event.kind)) {
+			throw new Error(`Timeline event has an invalid kind: ${event.id}`);
 		}
 		if (typeof event.occurredAt !== 'string' || Number.isNaN(Date.parse(event.occurredAt))) {
 			throw new Error(`Timeline event has an invalid timestamp: ${event.id}`);
 		}
+		if (typeof event.summary !== 'string' || event.summary.trim().length === 0) {
+			throw new Error(`Timeline event has an invalid summary: ${event.id}`);
+		}
 		if (!event.links || typeof event.links !== 'object' || Array.isArray(event.links)) {
 			throw new Error(`Timeline event has invalid links: ${event.id}`);
+		}
+		if (event.checkStatus !== undefined && !PROGRESS_CHECK_STATUSES.has(event.checkStatus)) {
+			throw new Error(`Timeline event has an invalid check status: ${event.id}`);
+		}
+	}
+}
+
+/** Reject duplicate or blank local repository identities before sorting them. */
+function validateRepositories(repositories: readonly ProgressRepository[]): void {
+	const repositoryIds = new Set<string>();
+	for (const repository of repositories) {
+		if (typeof repository.id !== 'string' || repository.id.trim().length === 0) {
+			throw new Error('Timeline repository has an invalid id');
+		}
+		if (repositoryIds.has(repository.id)) {
+			throw new Error(`Timeline repository has a duplicate id: ${repository.id}`);
+		}
+		repositoryIds.add(repository.id);
+		if (typeof repository.name !== 'string' || repository.name.trim().length === 0) {
+			throw new Error(`Timeline repository has an invalid name: ${repository.id}`);
 		}
 	}
 }
@@ -99,6 +128,7 @@ function validateEvents(events: readonly ProgressEvent[], repositoryIds: Readonl
  * events and dirty worktrees remain explicit working-tree events.
  */
 export function buildProgressTimeline(input: ProgressTimelineInput): ProgressTimeline {
+	validateRepositories(input.repositories);
 	const repositories = [...input.repositories]
 		.map(repository => ({ ...repository }))
 		.sort((left, right) => compareText(left.id, right.id));

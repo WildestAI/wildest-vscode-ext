@@ -82,6 +82,14 @@ suite('Progress timeline model', () => {
 
 	test('rejects malformed boundary evidence before cloning or sorting it', () => {
 		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }, { id: 'extension', name: 'duplicate' }],
+			events: [],
+		}), /duplicate id/);
+		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: '' }],
+			events: [],
+		}), /invalid name/);
+		assert.throws(() => buildProgressTimeline({
 			repositories: [{ id: 'extension', name: 'extension' }],
 			activeRepositoryId: 'missing',
 			events: [],
@@ -98,6 +106,12 @@ suite('Progress timeline model', () => {
 				id: 'commit:bad-links', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T00:00:00.000Z', summary: 'Missing links', links: null as unknown as Record<string, never>,
 			}],
 		}), /invalid links/);
+		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			events: [{
+				id: 'check:invalid', repositoryId: 'extension', kind: 'check', occurredAt: '2026-11-06T00:00:00.000Z', summary: 'Invalid check status', links: {}, checkStatus: 'unknown-status' as ProgressTimelineInput['events'][number]['checkStatus'],
+			}],
+		}), /invalid check status/);
 	});
 
 	test('orders equivalent instants by id even when timestamp offsets differ', () => {

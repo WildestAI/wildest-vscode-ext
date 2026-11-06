@@ -79,4 +79,35 @@ suite('Progress timeline model', () => {
 		}],
 		}), /unknown repository/);
 	});
+
+	test('rejects malformed boundary evidence before cloning or sorting it', () => {
+		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			activeRepositoryId: 'missing',
+			events: [],
+		}), /Active repository/);
+		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			events: [{
+				id: 'commit:bad-time', repositoryId: 'extension', kind: 'commit', occurredAt: 'not-a-date', summary: 'Bad timestamp', links: {},
+			}],
+		}), /invalid timestamp/);
+		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			events: [{
+				id: 'commit:bad-links', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T00:00:00.000Z', summary: 'Missing links', links: null as unknown as Record<string, never>,
+			}],
+		}), /invalid links/);
+	});
+
+	test('orders equivalent instants by id even when timestamp offsets differ', () => {
+		const timeline = buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			events: [
+				{ id: 'z-event', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T01:00:00+01:00', summary: 'Z', links: {} },
+				{ id: 'A-event', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T00:00:00Z', summary: 'A', links: {} },
+			],
+		});
+		assert.deepStrictEqual(timeline.events.map(event => event.id), ['A-event', 'z-event']);
+	});
 });

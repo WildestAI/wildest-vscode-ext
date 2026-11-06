@@ -56,12 +56,41 @@ export interface ProgressTimeline {
 	lastReviewedCommit?: string;
 }
 
+/** Compare text consistently across hosts without locale or ICU dependencies. */
+function compareText(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** Order events newest-first, with a stable code-unit id tie-breaker. */
 function compareEvents(left: ProgressEvent, right: ProgressEvent): number {
-	const timeOrder = right.occurredAt.localeCompare(left.occurredAt);
+	const timeOrder = Date.parse(right.occurredAt) - Date.parse(left.occurredAt);
 	if (timeOrder !== 0) {
 		return timeOrder;
 	}
-	return left.id.localeCompare(right.id);
+	return compareText(left.id, right.id);
+}
+
+/** Reject malformed boundary data before cloning or ordering it. */
+function validateEvents(events: readonly ProgressEvent[], repositoryIds: ReadonlySet<string>): void {
+	const eventIds = new Set<string>();
+	for (const event of events) {
+		if (typeof event.id !== 'string' || event.id.length === 0) {
+			throw new Error('Timeline event has an invalid id');
+		}
+		if (eventIds.has(event.id)) {
+			throw new Error(`Timeline event has a duplicate id: ${event.id}`);
+		}
+		eventIds.add(event.id);
+		if (!repositoryIds.has(event.repositoryId)) {
+			throw new Error(`Timeline event references an unknown repository: ${event.repositoryId}`);
+		}
+		if (typeof event.occurredAt !== 'string' || Number.isNaN(Date.parse(event.occurredAt))) {
+			throw new Error(`Timeline event has an invalid timestamp: ${event.id}`);
+		}
+		if (!event.links || typeof event.links !== 'object' || Array.isArray(event.links)) {
+			throw new Error(`Timeline event has invalid links: ${event.id}`);
+		}
+	}
 }
 
 /**
@@ -72,11 +101,13 @@ function compareEvents(left: ProgressEvent, right: ProgressEvent): number {
 export function buildProgressTimeline(input: ProgressTimelineInput): ProgressTimeline {
 	const repositories = [...input.repositories]
 		.map(repository => ({ ...repository }))
-		.sort((left, right) => left.id.localeCompare(right.id));
+		.sort((left, right) => compareText(left.id, right.id));
 	const repositoryIds = new Set(repositories.map(repository => repository.id));
 	if (input.activeRepositoryId && !repositoryIds.has(input.activeRepositoryId)) {
 		throw new Error(`Active repository is not present in timeline input: ${input.activeRepositoryId}`);
 	}
+
+	validateEvents(input.events, repositoryIds);
 
 	const events = [...input.events]
 		.map(event => ({
@@ -90,15 +121,6 @@ export function buildProgressTimeline(input: ProgressTimelineInput): ProgressTim
 			},
 		}))
 		.sort(compareEvents);
-
-	for (const event of events) {
-		if (!repositoryIds.has(event.repositoryId)) {
-			throw new Error(`Timeline event references an unknown repository: ${event.repositoryId}`);
-		}
-		if (Number.isNaN(Date.parse(event.occurredAt))) {
-			throw new Error(`Timeline event has an invalid timestamp: ${event.id}`);
-		}
-	}
 
 	const attention: ProgressAttentionItem[] = [];
 	for (const event of events) {

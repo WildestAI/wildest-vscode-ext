@@ -103,6 +103,12 @@ suite('Progress timeline model', () => {
 		assert.throws(() => buildProgressTimeline({
 			repositories: [{ id: 'extension', name: 'extension' }],
 			events: [{
+				id: 'commit:local-time', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T00:00:00', summary: 'Timezone-less timestamp', links: {},
+			}],
+		}), /invalid timestamp/);
+		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			events: [{
 				id: 'commit:bad-links', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T00:00:00.000Z', summary: 'Missing links', links: null as unknown as Record<string, never>,
 			}],
 		}), /invalid links/);

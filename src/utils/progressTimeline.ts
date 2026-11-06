@@ -12,6 +12,7 @@ export type ProgressEventKind = 'working-tree' | 'commit' | 'check';
 
 const PROGRESS_EVENT_KINDS = new Set<ProgressEventKind>(['working-tree', 'commit', 'check']);
 const PROGRESS_CHECK_STATUSES = new Set<ProgressCheckStatus>(['passed', 'failed', 'running', 'unknown']);
+const ISO_TIMESTAMP_WITH_TIME_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export interface ProgressRepository {
 	/** Stable workspace-local repository identifier; callers must not upload it. */
@@ -90,7 +91,11 @@ function validateEvents(events: readonly ProgressEvent[], repositoryIds: Readonl
 		if (!PROGRESS_EVENT_KINDS.has(event.kind)) {
 			throw new Error(`Timeline event has an invalid kind: ${event.id}`);
 		}
-		if (typeof event.occurredAt !== 'string' || Number.isNaN(Date.parse(event.occurredAt))) {
+		if (
+			typeof event.occurredAt !== 'string'
+			|| !ISO_TIMESTAMP_WITH_TIME_ZONE.test(event.occurredAt)
+			|| Number.isNaN(Date.parse(event.occurredAt))
+		) {
 			throw new Error(`Timeline event has an invalid timestamp: ${event.id}`);
 		}
 		if (typeof event.summary !== 'string' || event.summary.trim().length === 0) {

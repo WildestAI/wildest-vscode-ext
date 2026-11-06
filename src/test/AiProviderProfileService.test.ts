@@ -246,6 +246,13 @@ suite('AiProviderProfileService', () => {
 			throw error;
 		});
 		assert.strictEqual(dnsResult.status, 'connection-failed');
+
+		const transientDnsResult = await AiProviderProfileService.preflight(profile, { get: async () => 'secret-value' } as any, async () => {
+			const error = new Error('getaddrinfo EAI_AGAIN api.timeout.example: secret-value') as Error & { code?: string };
+			error.code = 'EAI_AGAIN';
+			throw error;
+		});
+		assert.strictEqual(transientDnsResult.status, 'connection-failed');
 	});
 
 	test('preflight classifies SecretStorage read failures without sending a request', async () => {

@@ -211,6 +211,7 @@ export class AiProviderProfileService {
 		return candidate.code === 'ETIMEDOUT'
 			|| candidate.name === 'TimeoutError'
 			|| (candidate.code !== 'ENOTFOUND'
+				&& candidate.code !== 'EAI_AGAIN'
 				&& typeof candidate.message === 'string'
 				&& /\b(?:timed?\s*out|timeout)\b/i.test(candidate.message));
 	}

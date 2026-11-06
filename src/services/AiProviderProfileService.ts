@@ -210,7 +210,9 @@ export class AiProviderProfileService {
 		const candidate = error as { code?: unknown; name?: unknown; message?: unknown };
 		return candidate.code === 'ETIMEDOUT'
 			|| candidate.name === 'TimeoutError'
-			|| (typeof candidate.message === 'string' && /\b(?:timed?\s*out|timeout)\b/i.test(candidate.message));
+			|| (candidate.code !== 'ENOTFOUND'
+				&& typeof candidate.message === 'string'
+				&& /\b(?:timed?\s*out|timeout)\b/i.test(candidate.message));
 	}
 
 	private static modelEndpoint(profile: AiProviderProfile): URL {

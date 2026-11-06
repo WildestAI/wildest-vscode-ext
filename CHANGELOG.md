@@ -6,6 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Changed
+- DiffGraph validation follows the wild CLI's own packaged JSON schema (vendored in `src/contract/`) instead of a hand-maintained list. CLI 1.3.0 output (schema 2.1: context files outside the diff, symbol sources, file diffs, AI summaries, `inherits` edges, `wild diff REF`) is accepted, so the runtime health check no longer reports that CLI as incompatible. Older schema 2.0 output is still accepted.
+- Release handoffs sync that schema from each CLI release and refuse a CLI whose real output fails the extension's validator, before opening the release PR and again before publishing.
+
 - History visualization tools are in development and will be added in future releases.
 
 ## [1.0.5] - 2025-10-22

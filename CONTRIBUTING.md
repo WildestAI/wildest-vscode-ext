@@ -72,6 +72,22 @@ Thank you for your interest in contributing to the WildestAI VSCode Extension! T
    - This enables development mode, which uses the CLI from your venv
 3. Test your changes in the Extension Development Host window
 
+### Using your local `wild` CLI
+
+With `WILDEST_DEV_MODE=1` (set by `.vscode/launch.json`), the extension runs the `wild` from `WILDEST_VENV_PATH` (default `../wild/.venv`) instead of the bundled binary. Press F5 to try unreleased CLI changes inside VS Code. If the CLI's DiffGraph schema changed, sync the extension's contract from that checkout and check the real output against it:
+
+```bash
+npm run sync:cli-contract -- --from-dir ../wild
+npm run verify:cli-contract -- ../wild/.venv/bin/wild
+```
+
+On Windows the virtual environment's executable is under `Scripts`:
+
+```powershell
+npm run sync:cli-contract -- --from-dir ..\wild
+npm run verify:cli-contract -- ..\wild\.venv\Scripts\wild.exe
+```
+
 ### Development Workflow
 
 1. **Make your changes** in the source code

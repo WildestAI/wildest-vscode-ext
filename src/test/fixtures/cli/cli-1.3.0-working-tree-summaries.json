@@ -1,0 +1,381 @@
+{
+  "diff_ref": {
+    "base_ref": "9973dc93661f4901f623c774f5ebff99512d19d6",
+    "comparison_mode": null,
+    "head_ref": null,
+    "kind": "working_tree",
+    "pathspecs": [],
+    "repo_root": "/example/repository",
+    "requested_base_ref": "HEAD",
+    "requested_head_ref": null
+  },
+  "files": [
+    {
+      "analysis_source": "structural",
+      "change_kind": "added",
+      "diff": {
+        "truncated": false,
+        "unified": "--- /dev/null\n+++ b/NOTES.md\n@@ -0,0 +1 @@\n+# notes\n"
+      },
+      "evidence": [
+        {
+          "detail": "{\"new_mode\":\"100644\",\"new_oid\":\"7c88e8a591766f27635a5bdab01832a59b04cf2e\",\"new_path\":\"NOTES.md\",\"new_sha256\":\"4a28fc250c09e1f28c9f37486fca6db3c7a4ee707373216f6f7bd62ade5d9330\",\"old_mode\":null,\"old_oid\":null,\"old_path\":null,\"old_sha256\":null,\"status\":\"A\"}",
+          "kind": "git_diff_name_status"
+        }
+      ],
+      "id": "file::NOTES.md",
+      "language": null,
+      "lines_added": 1,
+      "lines_removed": 0,
+      "old_path": null,
+      "path": "NOTES.md",
+      "summary": {
+        "analysis_source": "inferred",
+        "confidence": null,
+        "evidence": [
+          {
+            "kind": "llm_inference",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "file_ids": [
+              "file::NOTES.md"
+            ],
+            "kind": "structural_basis"
+          }
+        ],
+        "text": "Fixture summary for file::NOTES.md."
+      }
+    },
+    {
+      "analysis_source": "structural",
+      "change_kind": "modified",
+      "diff": {
+        "truncated": false,
+        "unified": "--- a/lib.py\n+++ b/lib.py\n@@ -1,5 +1,5 @@\n class Base:\n-    pass\n+    x = 1\n \n-def f(a):\n-    return a\n+def f(a, b=0):\n+    return a + b\n"
+      },
+      "evidence": [
+        {
+          "detail": "{\"new_mode\":\"100644\",\"new_oid\":\"733d3bcb77cdc2838f486af69aede994cbd2abea\",\"new_path\":\"lib.py\",\"new_sha256\":\"d9794a541eb49a66fdfcb7e84abe7422346eb47bbdb47ba509402f06c49f88ec\",\"old_mode\":\"100644\",\"old_oid\":\"538d3063fed9f6a1ce3846c2d95700b16a7276b6\",\"old_path\":\"lib.py\",\"old_sha256\":\"3f9b262cae75b4ca73845b71cdb95a1b6270cceea5caf0505d5692eed73e71a0\",\"status\":\"M\"}",
+          "kind": "git_diff_name_status"
+        }
+      ],
+      "id": "file::lib.py",
+      "language": "python",
+      "lines_added": 3,
+      "lines_removed": 3,
+      "old_path": null,
+      "path": "lib.py"
+    },
+    {
+      "analysis_source": "structural",
+      "change_kind": "unchanged",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=e8b16f03857f1dceb970d059859fd2f953bbc371",
+          "file": "use.py",
+          "kind": "ast_parse"
+        }
+      ],
+      "id": "file::use.py",
+      "language": "python",
+      "lines_added": 0,
+      "lines_removed": 0,
+      "old_path": null,
+      "path": "use.py"
+    }
+  ],
+  "generated_at": "2026-11-04T10:59:06Z",
+  "metadata": {
+    "analysis_duration_ms": 242,
+    "cloud_providers_used": [
+      "anthropic"
+    ],
+    "files_analyzed": 1,
+    "files_skipped": 1,
+    "languages_detected": [
+      "python"
+    ],
+    "llm_calls": 1,
+    "llm_model": "claude-haiku-5-5",
+    "privacy_tier": "cloud_llm",
+    "tiers_used": [
+      "inferred",
+      "structural"
+    ],
+    "warnings": [
+      {
+        "code": "UNSUPPORTED_LANGUAGE",
+        "detail": "Deterministic extraction currently supports Python (.py and .pyi) only; pre-change blob absent; post-change blob 7c88e8a591766f27635a5bdab01832a59b04cf2e.",
+        "file": "NOTES.md"
+      }
+    ]
+  },
+  "relationships": [
+    {
+      "analysis_source": "structural",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=733d3bcb77cdc2838f486af69aede994cbd2abea",
+          "file": "lib.py",
+          "kind": "ast_parse",
+          "line_end": 2,
+          "line_start": 1
+        }
+      ],
+      "id": "rel::file::lib.py->sym::lib.py::Base",
+      "kind": "defines",
+      "source_id": "file::lib.py",
+      "target_id": "sym::lib.py::Base"
+    },
+    {
+      "analysis_source": "structural",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=733d3bcb77cdc2838f486af69aede994cbd2abea",
+          "file": "lib.py",
+          "kind": "ast_parse",
+          "line_end": 5,
+          "line_start": 4
+        }
+      ],
+      "id": "rel::file::lib.py->sym::lib.py::f",
+      "kind": "defines",
+      "source_id": "file::lib.py",
+      "target_id": "sym::lib.py::f"
+    },
+    {
+      "analysis_source": "structural",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=e8b16f03857f1dceb970d059859fd2f953bbc371",
+          "file": "use.py",
+          "kind": "import_statement",
+          "line_end": 1,
+          "line_start": 1,
+          "snippet": "from lib import f, Base"
+        }
+      ],
+      "id": "rel::file::use.py->sym::lib.py::Base",
+      "kind": "imports",
+      "label": "resolved binding: Base",
+      "source_id": "file::use.py",
+      "target_id": "sym::lib.py::Base"
+    },
+    {
+      "analysis_source": "structural",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=e8b16f03857f1dceb970d059859fd2f953bbc371",
+          "file": "use.py",
+          "kind": "import_statement",
+          "line_end": 1,
+          "line_start": 1,
+          "snippet": "from lib import f, Base"
+        }
+      ],
+      "id": "rel::file::use.py->sym::lib.py::f",
+      "kind": "imports",
+      "label": "resolved binding: f",
+      "source_id": "file::use.py",
+      "target_id": "sym::lib.py::f"
+    },
+    {
+      "analysis_source": "structural",
+      "confidence": null,
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=e8b16f03857f1dceb970d059859fd2f953bbc371",
+          "file": "use.py",
+          "kind": "call_site",
+          "line_end": 3,
+          "line_start": 3,
+          "snippet": "class Child(Base)"
+        }
+      ],
+      "id": "rel::sym::use.py::Child->sym::lib.py::Base",
+      "kind": "inherits",
+      "resolution_method": "resolved",
+      "source_id": "sym::use.py::Child",
+      "target_id": "sym::lib.py::Base"
+    },
+    {
+      "analysis_source": "structural",
+      "confidence": null,
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=e8b16f03857f1dceb970d059859fd2f953bbc371",
+          "file": "use.py",
+          "kind": "call_site",
+          "line_end": 5,
+          "line_start": 5,
+          "snippet": "f(1)"
+        }
+      ],
+      "id": "rel::sym::use.py::Child.run->sym::lib.py::f",
+      "kind": "calls",
+      "resolution_method": "resolved",
+      "source_id": "sym::use.py::Child.run",
+      "target_id": "sym::lib.py::f"
+    }
+  ],
+  "schema_version": "2.1",
+  "summary": null,
+  "symbols": [
+    {
+      "analysis_source": "structural",
+      "change_kind": "modified",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=733d3bcb77cdc2838f486af69aede994cbd2abea",
+          "file": "lib.py",
+          "kind": "ast_parse",
+          "line_end": 2,
+          "line_start": 1
+        }
+      ],
+      "file_id": "file::lib.py",
+      "id": "sym::lib.py::Base",
+      "kind": "class",
+      "location": {
+        "file": "lib.py",
+        "line_end": 2,
+        "line_start": 1
+      },
+      "name": "Base",
+      "parent_id": null,
+      "qualified_name": "Base",
+      "source": {
+        "after": {
+          "line_start": 1,
+          "text": "class Base:\n    x = 1\n",
+          "truncated": false
+        },
+        "before": {
+          "line_start": 1,
+          "text": "class Base:\n    pass\n",
+          "truncated": false
+        }
+      },
+      "summary": {
+        "analysis_source": "inferred",
+        "confidence": null,
+        "evidence": [
+          {
+            "kind": "llm_inference",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "kind": "structural_basis",
+            "symbol_ids": [
+              "sym::lib.py::Base"
+            ]
+          }
+        ],
+        "text": "Fixture summary for sym::lib.py::Base."
+      }
+    },
+    {
+      "analysis_source": "structural",
+      "change_kind": "modified",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=733d3bcb77cdc2838f486af69aede994cbd2abea",
+          "file": "lib.py",
+          "kind": "ast_parse",
+          "line_end": 5,
+          "line_start": 4
+        }
+      ],
+      "file_id": "file::lib.py",
+      "id": "sym::lib.py::f",
+      "kind": "function",
+      "location": {
+        "file": "lib.py",
+        "line_end": 5,
+        "line_start": 4
+      },
+      "name": "f",
+      "parent_id": null,
+      "qualified_name": "f",
+      "source": {
+        "after": {
+          "line_start": 4,
+          "text": "def f(a, b=0):\n    return a + b\n",
+          "truncated": false
+        },
+        "before": {
+          "line_start": 4,
+          "text": "def f(a):\n    return a\n",
+          "truncated": false
+        }
+      },
+      "summary": {
+        "analysis_source": "inferred",
+        "confidence": null,
+        "evidence": [
+          {
+            "kind": "llm_inference",
+            "model": "claude-haiku-5-5"
+          },
+          {
+            "kind": "structural_basis",
+            "symbol_ids": [
+              "sym::lib.py::f"
+            ]
+          }
+        ],
+        "text": "Fixture summary for sym::lib.py::f."
+      }
+    },
+    {
+      "analysis_source": "structural",
+      "change_kind": "unchanged",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=e8b16f03857f1dceb970d059859fd2f953bbc371",
+          "file": "use.py",
+          "kind": "ast_parse",
+          "line_end": 5,
+          "line_start": 3
+        }
+      ],
+      "file_id": "file::use.py",
+      "id": "sym::use.py::Child",
+      "kind": "class",
+      "location": {
+        "file": "use.py",
+        "line_end": 5,
+        "line_start": 3
+      },
+      "name": "Child",
+      "parent_id": null,
+      "qualified_name": "Child"
+    },
+    {
+      "analysis_source": "structural",
+      "change_kind": "unchanged",
+      "evidence": [
+        {
+          "detail": "analyzer=diffgraph-python-tree-sitter;parser=tree-sitter-language-pack@1.22.1;query=python-structure-v2;blob=e8b16f03857f1dceb970d059859fd2f953bbc371",
+          "file": "use.py",
+          "kind": "ast_parse",
+          "line_end": 5,
+          "line_start": 4
+        }
+      ],
+      "file_id": "file::use.py",
+      "id": "sym::use.py::Child.run",
+      "kind": "method",
+      "location": {
+        "file": "use.py",
+        "line_end": 5,
+        "line_start": 4
+      },
+      "name": "run",
+      "parent_id": "sym::use.py::Child",
+      "qualified_name": "Child.run"
+    }
+  ],
+  "wild_version": "1.3.0"
+}

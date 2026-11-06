@@ -1,0 +1,9 @@
+{
+  "repository": "WildestAI/wild",
+  "ref": "c148de2d5e3f0172c5b287e983e3e4ad544286c5",
+  "note": "Synced from the wild CLI by scripts/release/sync-cli-contract.mjs; the release handoff refreshes it from each CLI release tag.",
+  "schemaPath": "diffgraph/schema/diffgraph-v2.schema.json",
+  "schemaSha256": "27cf12076d06b0d29da815b706e6b3e08550d4c6f9b48a3b145cf6a02ecc6148",
+  "examplePath": "diffgraph/schema/diffgraph-v2.structural.example.json",
+  "exampleSha256": "2d2883b925a93619526a78c5cbaf9cf04d5e38c65a9aacf2b06f644fd2fff20f"
+}

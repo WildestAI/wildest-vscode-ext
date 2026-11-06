@@ -19,7 +19,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Runs the bundled CLI binary in a separate, read-only job on a fresh runner,
+  # so a compromised release cannot tamper with the job that holds the
+  # marketplace credentials; publishing only proceeds if this passes.
+  cli-contract:
+    name: Run the bundled CLI against the extension contract (read-only)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Verify the requested CLI release is published and final
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_REPOSITORY: WildestAI/wild
+        run: |
+          cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
+          metadata="$(gh release view "$cli_tag" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isImmutable,isPrerelease)"
+          node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease || !release.isImmutable) process.exit(1)' "$metadata" "$cli_tag"
+      - name: Download and verify the locked CLI release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_REPOSITORY: WildestAI/wild
+        run: |
+          cli_tag="$(node -e "console.log(require('./release-inputs/diffgraph-cli.json').releaseTag)")"
+          mkdir cli-release
+          gh release download "$cli_tag" --repo "$CLI_REPOSITORY" --dir cli-release
+          node scripts/release/verify-cli-release.mjs cli-release
+      - name: Prove the bundled CLI's real output passes the extension contract
+        run: |
+          chmod +x cli-release/wild-linux-x64
+          npm run verify:cli-contract -- cli-release/wild-linux-x64
   publish:
+    needs: cli-contract
     name: Verify, package, and publish tagged VSIX
     runs-on: ubuntu-latest
     steps:
@@ -59,8 +100,6 @@ jobs:
           node scripts/release/verify-cli-release.mjs cli-release
           cp cli-release/wild-* bin/
           chmod +x bin/wild-macos-arm64 bin/wild-macos-x64 bin/wild-linux-arm64 bin/wild-linux-x64
-      - name: Prove the bundled CLI's real output passes the extension contract
-        run: npm run verify:cli-contract -- bin/wild-linux-x64
       - name: Build and package the verified VSIX
         env:
           VERSION: ${{ inputs.release_tag || github.ref_name }}

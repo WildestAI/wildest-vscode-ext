@@ -15,17 +15,20 @@ on:
         type: string
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: extension-release-handoff-main
   cancel-in-progress: false
 
 jobs:
-  prepare:
-    name: Verify CLI release and open extension release PR
+  resolve:
+    name: Select the CLI release to hand off
     runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.handoff.outputs.skip }}
+      extension_version: ${{ steps.handoff.outputs.extension_version }}
+      cli_release_tag: ${{ steps.handoff.outputs.cli_release_tag }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -66,33 +69,87 @@ jobs:
             appendFileSync(process.env.GITHUB_OUTPUT, `skip=false\nextension_version=${selected.extensionVersion}\ncli_release_tag=${selected.cliReleaseTag}\n`);
           }
           NODE
+  # Runs the downloaded CLI binary. It is a separate, read-only job on a fresh
+  # runner, so a compromised release cannot plant hooks or alter files in the
+  # job that holds the write token; that job only proceeds if this passes.
+  cli-contract:
+    name: Run the released CLI against the extension contract (read-only)
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        if: steps.handoff.outputs.skip != 'true'
         with:
           node-version: 20
           cache: npm
       - run: npm ci
-        if: steps.handoff.outputs.skip != 'true'
-      - name: Refuse malformed or non-incrementing release inputs
-        if: steps.handoff.outputs.skip != 'true'
-        env:
-          EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
-          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
-        run: node scripts/release/prepare-release-handoff.mjs --check "$EXTENSION_VERSION" "$CLI_RELEASE_TAG"
-      - name: Verify the requested CLI release is published and final
-        if: steps.handoff.outputs.skip != 'true'
+      - name: Download and verify the CLI release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+          CLI_RELEASE_TAG: ${{ needs.resolve.outputs.cli_release_tag }}
+          CLI_REPOSITORY: WildestAI/wild
+        run: |
+          release_dir="${RUNNER_TEMP}/cli-release"
+          mkdir -p "$release_dir"
+          gh release download "$CLI_RELEASE_TAG" --repo "$CLI_REPOSITORY" --dir "$release_dir"
+          node scripts/release/verify-cli-release.mjs "$release_dir"
+      - name: Sync the extension contract from the CLI release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_RELEASE_TAG: ${{ needs.resolve.outputs.cli_release_tag }}
+        run: node scripts/release/sync-cli-contract.mjs "$CLI_RELEASE_TAG"
+      - name: Prove the released CLI's real output passes the extension contract
+        run: |
+          chmod +x "${RUNNER_TEMP}/cli-release/wild-linux-x64"
+          npm run verify:cli-contract -- "${RUNNER_TEMP}/cli-release/wild-linux-x64"
+  prepare:
+    name: Verify CLI release and open extension release PR
+    needs: [resolve, cli-contract]
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: needs.resolve.outputs.skip != 'true'
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+        if: needs.resolve.outputs.skip != 'true'
+      - name: Refuse malformed or non-incrementing release inputs
+        if: needs.resolve.outputs.skip != 'true'
+        env:
+          EXTENSION_VERSION: ${{ needs.resolve.outputs.extension_version }}
+          CLI_RELEASE_TAG: ${{ needs.resolve.outputs.cli_release_tag }}
+        run: node scripts/release/prepare-release-handoff.mjs --check "$EXTENSION_VERSION" "$CLI_RELEASE_TAG"
+      - name: Verify the requested CLI release is published and final
+        if: needs.resolve.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_RELEASE_TAG: ${{ needs.resolve.outputs.cli_release_tag }}
           CLI_REPOSITORY: WildestAI/wild
         run: |
           metadata="$(gh release view "$CLI_RELEASE_TAG" --repo "$CLI_REPOSITORY" --json tagName,isDraft,isImmutable,isPrerelease)"
           node -e 'const [metadata, tag] = process.argv.slice(1); const release = JSON.parse(metadata); if (release.tagName !== tag || release.isDraft || release.isPrerelease || !release.isImmutable) process.exit(1)' "$metadata" "$CLI_RELEASE_TAG"
       - name: Download and verify all locked CLI release assets
-        if: steps.handoff.outputs.skip != 'true'
+        if: needs.resolve.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+          CLI_RELEASE_TAG: ${{ needs.resolve.outputs.cli_release_tag }}
           CLI_REPOSITORY: WildestAI/wild
         run: |
           # Kept for the contract gate below; the runner discards RUNNER_TEMP.
@@ -102,7 +159,7 @@ jobs:
           gh release download "$CLI_RELEASE_TAG" --repo "$CLI_REPOSITORY" --dir "$release_dir"
           node scripts/release/verify-cli-release.mjs "$release_dir"
       - name: Run release-contract regression tests
-        if: steps.handoff.outputs.skip != 'true'
+        if: needs.resolve.outputs.skip != 'true'
         run: |
           npm run test:release-contract
           npm run test:release-handoff
@@ -113,11 +170,11 @@ jobs:
           npm run test:cli-contract-sync
           npm run verify:release-input
       - name: Inspect existing release candidate without mutating it
-        if: steps.handoff.outputs.skip != 'true'
+        if: needs.resolve.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
-          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+          EXTENSION_VERSION: ${{ needs.resolve.outputs.extension_version }}
+          CLI_RELEASE_TAG: ${{ needs.resolve.outputs.cli_release_tag }}
         run: |
           branch="release/extension-v${EXTENSION_VERSION}"
           pull_requests_file="$(mktemp)"
@@ -153,26 +210,19 @@ jobs:
           printf '### Release candidate state\n\n- State: `%s`\n- %s\n' "$state" "$message" >> "$GITHUB_STEP_SUMMARY"
           test "$state" = 'no-candidate' || exit 1
       - name: Prepare the reviewable extension release candidate
-        if: steps.handoff.outputs.skip != 'true'
+        if: needs.resolve.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
-          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+          EXTENSION_VERSION: ${{ needs.resolve.outputs.extension_version }}
+          CLI_RELEASE_TAG: ${{ needs.resolve.outputs.cli_release_tag }}
         run: |
           branch="release/extension-v${EXTENSION_VERSION}"
           git switch -c "$branch"
           node scripts/release/prepare-release-handoff.mjs "$EXTENSION_VERSION" "$CLI_RELEASE_TAG"
           # Follow the CLI's own published DiffGraph contract (needs the API token).
           node scripts/release/sync-cli-contract.mjs "$CLI_RELEASE_TAG"
-      # Runs the downloaded CLI binary, so this step deliberately has no token:
-      # a compromised release must not be able to write to this repository.
-      - name: Prove the released CLI's real output passes the extension contract
-        if: steps.handoff.outputs.skip != 'true'
-        run: |
-          chmod +x "${RUNNER_TEMP}/cli-release/wild-linux-x64"
-          npm run verify:cli-contract -- "${RUNNER_TEMP}/cli-release/wild-linux-x64"
       - name: Check the release candidate package and change set
-        if: steps.handoff.outputs.skip != 'true'
+        if: needs.resolve.outputs.skip != 'true'
         run: |
           npm run verify:release-input
           npm run package:preflight
@@ -189,11 +239,11 @@ jobs:
               process.exit(1);
             }'
       - name: Commit, push, and safely create or recover the release candidate PR
-        if: steps.handoff.outputs.skip != 'true'
+        if: needs.resolve.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          EXTENSION_VERSION: ${{ steps.handoff.outputs.extension_version }}
-          CLI_RELEASE_TAG: ${{ steps.handoff.outputs.cli_release_tag }}
+          EXTENSION_VERSION: ${{ needs.resolve.outputs.extension_version }}
+          CLI_RELEASE_TAG: ${{ needs.resolve.outputs.cli_release_tag }}
         run: |
           branch="release/extension-v${EXTENSION_VERSION}"
           git config user.name 'github-actions[bot]'

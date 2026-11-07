@@ -173,6 +173,15 @@ export class CliService {
 			const versionResult = await executeProbe(diagnostics.executable, ['--version'], 5000);
 			const versionOutput = `${versionResult.stdout}\n${versionResult.stderr}`;
 			const version = versionOutput.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/)?.[0] || 'unknown';
+			if (version === 'unknown') {
+				return {
+					status: 'incompatible',
+					cliVersion: version,
+					schemaSupport: 'not checked',
+					detail: 'The selected CLI did not report a recognizable semantic version. Reinstall the extension or select a supported CLI release before using DiffGraph.',
+				};
+			}
+
 			workspace = await createWorkspace();
 			const artifactResult = await executeProbe(
 				diagnostics.executable,

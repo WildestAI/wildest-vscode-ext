@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { chmod, cp, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { REQUIRED_ASSETS } from './release-contract.mjs';
@@ -23,6 +24,11 @@ try {
     await writeFile(path, `preflight placeholder for ${asset}\n`);
     if (!asset.endsWith('.exe')) await chmod(path, 0o755);
   }
+  const checksumLines = await Promise.all(REQUIRED_ASSETS.map(async asset => {
+    const digest = createHash('sha256').update(await readFile(join(bin, asset))).digest('hex');
+    return `${digest}  ${asset}`;
+  }));
+  await writeFile(join(bin, 'SHA256SUMS'), `${checksumLines.join('\n')}\n`);
   execFileSync(npmExecutable(process.platform), ['run', 'package'], { cwd: workspace, stdio: 'inherit', ...npmExecutionOptions(process.platform) });
   await mkdir(join(workspace, '.release-preflight'), { recursive: true });
   execFileSync(npmExecutable(process.platform), ['run', 'package:vsix', '--', '--out', npmArgument(vsix, process.platform)], { cwd: workspace, stdio: 'inherit', ...npmExecutionOptions(process.platform) });
@@ -34,6 +40,7 @@ try {
   for (const asset of REQUIRED_ASSETS) {
     if (!entries.split(/\r?\n/).includes(`extension/bin/${asset}`)) throw new Error(`VSIX is missing ${asset}`);
   }
+  if (!entries.split(/\r?\n/).includes('extension/bin/SHA256SUMS')) throw new Error('VSIX is missing SHA256SUMS');
   // Windows does not use POSIX execute bits; its packaged `.exe` artifact is
   // still covered by the required-path check above. Extract and validate Unix
   // executable modes only where the release runtime relies on them.

@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
+import { createHash } from 'crypto';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CliCommand, CliOutput } from '../utils/types';
 import { DiffGraphContractError, validateDiffGraphArtifact } from '../utils/diffGraphV2';
 
-export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'quarantined' | 'invalid' | 'architecture-mismatch' | 'unsupported';
+export type CliRuntimeStatus = 'ready' | 'missing' | 'permission-denied' | 'quarantined' | 'integrity-mismatch' | 'invalid' | 'architecture-mismatch' | 'unsupported';
 export type CliCompatibilityStatus = 'compatible' | 'incompatible' | 'unavailable' | 'timed-out';
 
 export class CliCancelledError extends Error {
@@ -54,6 +55,7 @@ export interface RuntimeEnvironment {
 	accessSync: (candidate: fs.PathLike, mode?: number) => void;
 	statSync: (candidate: fs.PathLike) => fs.Stats;
 	readFileHeader?: (candidate: fs.PathLike, length: number) => Buffer;
+	readFile?: (candidate: fs.PathLike) => Buffer;
 	isQuarantined?: (candidate: fs.PathLike) => boolean;
 }
 
@@ -114,9 +116,13 @@ export class CliService {
 		}
 
 		const launchability = this.inspectPackagedLaunchability(executable, runtime);
-		const status = launchability === 'ready' && runtime.platform === 'darwin' && runtime.isQuarantined?.(executable)
-			? 'quarantined'
-			: launchability;
+		const status = launchability !== 'ready'
+			? launchability
+			: !this.hasExpectedPackagedChecksum(executable, binaryName, runtime)
+				? 'integrity-mismatch'
+				: runtime.platform === 'darwin' && runtime.isQuarantined?.(executable)
+					? 'quarantined'
+					: 'ready';
 		return {
 			source: 'packaged binary',
 			status,
@@ -129,7 +135,9 @@ export class CliService {
 					? `The packaged CLI ${binaryName} does not match this ${runtime.platform}/${runtime.architecture} machine. Reinstall the extension to restore the matching release artifact.`
 				: status === 'permission-denied'
 					? `The packaged CLI ${binaryName} exists but cannot be executed. Reinstall the extension; on macOS/Linux, verify that the file has execute permission.`
-					: status === 'quarantined'
+					: status === 'integrity-mismatch'
+						? `The packaged CLI ${binaryName} does not match this extension's verified checksum. Reinstall the extension from a trusted source; do not run the altered binary.`
+						: status === 'quarantined'
 						? `The packaged CLI ${binaryName} is blocked by macOS quarantine. Reinstall the extension from a trusted source, then reopen VS Code; do not bypass Gatekeeper with an unverified binary.`
 						: status === 'missing'
 						? `The packaged CLI is missing. Install a release that includes ${binaryName} in the extension bin directory.`
@@ -504,6 +512,36 @@ export class CliService {
 		}
 	}
 
+	/**
+	 * Check the selected packaged executable against the release checksum shipped
+	 * alongside it. This catches damaged or altered extension contents before the
+	 * executable can be launched. Development runtimes intentionally bypass this
+	 * release-artifact check.
+	 */
+	private static hasExpectedPackagedChecksum(
+		executable: string,
+		binaryName: string,
+		runtime: RuntimeEnvironment,
+	): boolean {
+		// Custom test runtimes that predate checksum support can omit readFile;
+		// production always supplies it below.
+		if (!runtime.readFile) { return true; }
+		try {
+			const checksumFile = path.join(path.dirname(executable), 'SHA256SUMS');
+			const checksumText = runtime.readFile(checksumFile).toString('utf8');
+			const match = checksumText.match(new RegExp(`^([a-fA-F0-9]{64}) [ *]${this.escapeRegExp(binaryName)}$`, 'm'));
+			if (!match) { return false; }
+			const actual = createHash('sha256').update(runtime.readFile(executable)).digest('hex');
+			return actual === match[1].toLowerCase();
+		} catch {
+			return false;
+		}
+	}
+
+	private static escapeRegExp(value: string): string {
+		return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
 	private static getRuntimeEnvironment(): RuntimeEnvironment {
 		return {
 			platform: os.platform(),
@@ -513,6 +551,7 @@ export class CliService {
 			accessSync: fs.accessSync,
 			statSync: fs.statSync,
 			readFileHeader: this.readFileHeader,
+			readFile: fs.readFileSync,
 			isQuarantined: this.isQuarantined,
 		};
 	}
@@ -585,13 +624,19 @@ export class CliService {
 			throw new Error(`Unsupported platform: ${runtime.platform} ${runtime.architecture}`);
 		}
 		const launchability = this.inspectPackagedLaunchability(executable, runtime);
-		const status = launchability === 'ready' && runtime.platform === 'darwin' && runtime.isQuarantined?.(executable)
-			? 'quarantined'
-			: launchability;
+		const status = launchability !== 'ready'
+			? launchability
+			: !this.hasExpectedPackagedChecksum(executable, binaryName, runtime)
+				? 'integrity-mismatch'
+				: runtime.platform === 'darwin' && runtime.isQuarantined?.(executable)
+					? 'quarantined'
+					: 'ready';
 		if (status !== 'ready') {
 			throw new Error(status === 'permission-denied'
 				? `Packaged CLI is not executable: ${executable}. Reinstall the extension and verify execute permission.`
-				: status === 'quarantined'
+				: status === 'integrity-mismatch'
+					? `Packaged CLI checksum verification failed: ${executable}. Reinstall the extension from a trusted source; do not run the altered binary.`
+					: status === 'quarantined'
 					? `Packaged CLI is quarantined: ${executable}. Reinstall the extension from a trusted source; do not bypass Gatekeeper with an unverified binary.`
 					: status === 'missing'
 						? `Packaged CLI is missing: ${executable}. Reinstall the extension.`

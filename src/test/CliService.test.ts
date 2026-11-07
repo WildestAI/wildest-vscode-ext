@@ -310,6 +310,42 @@ suite('CliService runtime diagnostics', () => {
 		assert.strictEqual(diagnostics.status, 'ready');
 	});
 
+	test('accepts a packaged CLI that matches the bundled release checksum', () => {
+		const executable = path.join(context.extensionPath, 'bin', 'wild-linux-x64');
+		const binary = Buffer.from('verified-cli');
+		const checksum = require('crypto').createHash('sha256').update(binary).digest('hex');
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => linuxElfHeader(62, length),
+			readFile: (candidate: fs.PathLike) => candidate.toString() === executable
+				? binary
+				: Buffer.from(`${checksum}  wild-linux-x64\n`),
+		};
+
+		assert.strictEqual(CliService.inspectRuntime(context, runtime).status, 'ready');
+		assert.doesNotThrow(() => CliService.setupCommand([], context, runtime));
+	});
+
+	test('refuses a packaged CLI whose checksum does not match the bundled release record', () => {
+		const executable = path.join(context.extensionPath, 'bin', 'wild-linux-x64');
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => linuxElfHeader(62, length),
+			readFile: (candidate: fs.PathLike) => candidate.toString() === executable
+				? Buffer.from('altered-cli')
+				: Buffer.from(`${'0'.repeat(64)}  wild-linux-x64\n`),
+		};
+
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'integrity-mismatch');
+		assert.match(diagnostics.detail, /verified checksum/);
+		assert.throws(() => CliService.setupCommand([], context, runtime), /checksum verification failed.*do not run/);
+	});
+
 	test('reports a packaged macOS binary for the wrong architecture before launch', () => {
 		const runtime = {
 			platform: 'darwin' as NodeJS.Platform, architecture: 'arm64', env: {}, existsSync: () => true,

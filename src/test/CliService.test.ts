@@ -9,6 +9,12 @@ import { CliCancelledError, CliService } from '../services/CliService';
 
 const fileError = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
 const regularFileStats = { isFile: () => true } as fs.Stats;
+const checksumFixtureBinary = Buffer.from('checksum-fixture-cli');
+const checksumFixtureDigest = require('crypto').createHash('sha256').update(checksumFixtureBinary).digest('hex');
+const checksumFixtureReadFile = (candidate: fs.PathLike): Buffer => path.basename(candidate.toString()) === 'SHA256SUMS'
+	? Buffer.from(['wild-linux-x64', 'wild-linux-arm64', 'wild-macos-x64', 'wild-macos-arm64', 'wild-win.exe']
+		.map(name => `${checksumFixtureDigest}  ${name}`).join('\n'))
+	: checksumFixtureBinary;
 
 const validPeHeader = (length: number): Buffer => {
 	const header = Buffer.alloc(0x86);
@@ -67,6 +73,7 @@ suite('CliService runtime diagnostics', () => {
 			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 		};
 		const diagnostics = CliService.inspectRuntime(context, runtime);
 		const command = CliService.setupCommand(['--version'], context, runtime);
@@ -265,6 +272,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'win32', architecture: 'x64', env: {}, existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 			readFileHeader: (_candidate: fs.PathLike, length: number) => windowsPeHeader(0x8664, length),
 		});
 
@@ -304,6 +312,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'linux', architecture: 'arm64', env: {}, existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 			readFileHeader: (_candidate: fs.PathLike, length: number) => linuxElfHeader(183, length),
 		});
 
@@ -326,6 +335,20 @@ suite('CliService runtime diagnostics', () => {
 
 		assert.strictEqual(CliService.inspectRuntime(context, runtime).status, 'ready');
 		assert.doesNotThrow(() => CliService.setupCommand([], context, runtime));
+	});
+
+	test('refuses a packaged CLI when checksum reads are unavailable', () => {
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+			readFileHeader: (_candidate: fs.PathLike, length: number) => linuxElfHeader(62, length),
+		};
+
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'integrity-mismatch');
+		assert.match(diagnostics.detail, /verified checksum/);
+		assert.throws(() => CliService.setupCommand([], context, runtime), /checksum verification failed.*do not run/);
 	});
 
 	test('refuses a packaged CLI whose checksum does not match the bundled release record', () => {
@@ -379,6 +402,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'darwin' as NodeJS.Platform, architecture: 'arm64', env: {}, existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 			readFileHeader: (_candidate: fs.PathLike, length: number) => macosMachOHeader(0x0100000c, length),
 			isQuarantined: () => true,
 		};
@@ -398,6 +422,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'darwin', architecture: 'x64', env: {}, existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 			readFileHeader: (_candidate: fs.PathLike, length: number) => macosMachOHeader(0x01000007, length),
 		});
 
@@ -409,6 +434,7 @@ suite('CliService runtime diagnostics', () => {
 			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 			readFileHeader: () => { throw fileError('EACCES'); },
 		};
 
@@ -491,6 +517,7 @@ suite('CliService runtime diagnostics', () => {
 			existsSync: (candidate: fs.PathLike) => candidate.toString() === executable,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 		};
 		const calls: Array<{ args: string[]; cwd?: string }> = [];
 		let disposed = false;
@@ -522,6 +549,7 @@ suite('CliService runtime diagnostics', () => {
 			existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 		};
 		let workspaceCreated = false;
 		const calls: string[] = [];
@@ -551,6 +579,7 @@ suite('CliService runtime diagnostics', () => {
 			existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 		};
 		let disposed = false;
 		const probe = await CliService.probeRuntime(
@@ -577,6 +606,7 @@ suite('CliService runtime diagnostics', () => {
 				existsSync: () => true,
 				accessSync: () => undefined,
 				statSync: () => regularFileStats,
+				readFile: checksumFixtureReadFile,
 			};
 			const probe = await CliService.probeRuntime(
 				CliService.inspectRuntime(context, runtime),
@@ -651,6 +681,7 @@ suite('CliService runtime diagnostics', () => {
 			existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 		});
 		const timeout = Object.assign(new Error('sensitive process output'), {
 			code: 'ETIMEDOUT',
@@ -669,6 +700,7 @@ suite('CliService runtime diagnostics', () => {
 			existsSync: () => true,
 			accessSync: () => undefined,
 			statSync: () => regularFileStats,
+			readFile: checksumFixtureReadFile,
 		});
 		const probe = await CliService.probeRuntime(
 			diagnostics,

@@ -523,9 +523,9 @@ export class CliService {
 		binaryName: string,
 		runtime: RuntimeEnvironment,
 	): boolean {
-		// Custom test runtimes that predate checksum support can omit readFile;
-		// production always supplies it below.
-		if (!runtime.readFile) { return true; }
+		// The release runtime must be able to read both the manifest and executable.
+		// Missing capability is treated as an integrity failure rather than bypassing verification.
+		if (!runtime.readFile) { return false; }
 		try {
 			const checksumFile = path.join(path.dirname(executable), 'SHA256SUMS');
 			const checksumText = runtime.readFile(checksumFile).toString('utf8');

@@ -480,6 +480,35 @@ suite('CliService runtime diagnostics', () => {
 		assert.match(probe.schemaSupport, /schema major 2/);
 	});
 
+	test('rejects an unparseable CLI version without running a DiffGraph probe', async () => {
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => undefined,
+			statSync: () => regularFileStats,
+		};
+		let workspaceCreated = false;
+		const calls: string[] = [];
+		const probe = await CliService.probeRuntime(
+			CliService.inspectRuntime(context, runtime),
+			async (_executable, args) => {
+				calls.push(args.join(' '));
+				return { stdout: 'wild development build', stderr: '' };
+			},
+			async () => {
+				workspaceCreated = true;
+				return { cwd: '/synthetic-repository', dispose: () => undefined };
+			},
+		);
+
+		assert.strictEqual(probe.status, 'incompatible');
+		assert.strictEqual(probe.cliVersion, 'unknown');
+		assert.strictEqual(probe.schemaSupport, 'not checked');
+		assert.match(probe.detail, /recognizable semantic version/);
+		assert.deepStrictEqual(calls, ['--version']);
+		assert.strictEqual(workspaceCreated, false);
+	});
+
 	test('reports an incompatible CLI when its v2 artifact is incomplete', async () => {
 		const runtime = {
 			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},

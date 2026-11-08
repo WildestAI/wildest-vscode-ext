@@ -200,10 +200,14 @@ suite('AiProviderProfileService', () => {
 		assert.strictEqual(requestedUrl, 'http://127.0.0.1:11434/v1/models/local%2Fmodel');
 		assert.strictEqual(requestedAuthorization, 'Bearer private-key');
 
-		for (const [statusCode, expected] of [[401, 'credentials-rejected'], [404, 'unsupported-model'], [429, 'rate-limited'], [503, 'provider-unavailable']] as const) {
+		for (const [statusCode, expected] of [[401, 'credentials-rejected'], [402, 'credits-unavailable'], [404, 'unsupported-model'], [429, 'rate-limited'], [503, 'provider-unavailable']] as const) {
 			const result = await AiProviderProfileService.preflight(profile, secrets, async () => statusCode);
 			assert.strictEqual(result.status, expected);
 			assert.ok(!result.detail.includes('private-key'));
+			if (statusCode === 402) {
+				assert.match(result.detail, /expired account credits/i);
+				assert.match(result.detail, /Deterministic Git and DiffGraph workflows remain available/);
+			}
 		}
 	});
 

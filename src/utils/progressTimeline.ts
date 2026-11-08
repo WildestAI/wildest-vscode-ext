@@ -14,6 +14,18 @@ const PROGRESS_EVENT_KINDS = new Set<ProgressEventKind>(['working-tree', 'commit
 const PROGRESS_CHECK_STATUSES = new Set<ProgressCheckStatus>(['passed', 'failed', 'running', 'unknown']);
 const ISO_TIMESTAMP_WITH_TIME_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
+/** Ensure the date portion is a real Gregorian calendar day before Date.parse normalizes it. */
+function hasValidCalendarDate(value: string): boolean {
+	const year = Number(value.slice(0, 4));
+	const month = Number(value.slice(5, 7));
+	const day = Number(value.slice(8, 10));
+	const calendar = new Date(0);
+	calendar.setUTCFullYear(year, month - 1, day);
+	return calendar.getUTCFullYear() === year
+		&& calendar.getUTCMonth() === month - 1
+		&& calendar.getUTCDate() === day;
+}
+
 export interface ProgressRepository {
 	/** Stable workspace-local repository identifier; callers must not upload it. */
 	id: string;
@@ -94,6 +106,7 @@ function validateEvents(events: readonly ProgressEvent[], repositoryIds: Readonl
 		if (
 			typeof event.occurredAt !== 'string'
 			|| !ISO_TIMESTAMP_WITH_TIME_ZONE.test(event.occurredAt)
+			|| !hasValidCalendarDate(event.occurredAt)
 			|| Number.isNaN(Date.parse(event.occurredAt))
 		) {
 			throw new Error(`Timeline event has an invalid timestamp: ${event.id}`);

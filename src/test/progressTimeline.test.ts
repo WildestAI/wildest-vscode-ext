@@ -110,6 +110,18 @@ suite('Progress timeline model', () => {
 		assert.throws(() => buildProgressTimeline({
 			repositories: [{ id: 'extension', name: 'extension' }],
 			events: [{
+				id: 'commit:impossible-date', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-02-30T00:00:00Z', summary: 'Impossible calendar date', links: {},
+			}],
+		}), /invalid timestamp/);
+		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			events: [{
+				id: 'commit:bad-offset', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T00:00:00+99:99', summary: 'Malformed offset', links: {},
+			}],
+		}), /invalid timestamp/);
+		assert.throws(() => buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			events: [{
 				id: 'commit:bad-links', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T00:00:00.000Z', summary: 'Missing links', links: null as unknown as Record<string, never>,
 			}],
 		}), /invalid links/);
@@ -119,6 +131,17 @@ suite('Progress timeline model', () => {
 				id: 'check:invalid', repositoryId: 'extension', kind: 'check', occurredAt: '2026-11-06T00:00:00.000Z', summary: 'Invalid check status', links: {}, checkStatus: 'unknown-status' as ProgressTimelineInput['events'][number]['checkStatus'],
 			}],
 		}), /invalid check status/);
+	});
+
+	test('accepts calendar edge cases that Date.parse handles without normalizing the date', () => {
+		const timeline = buildProgressTimeline({
+			repositories: [{ id: 'extension', name: 'extension' }],
+			events: [
+				{ id: 'end-of-day', repositoryId: 'extension', kind: 'commit', occurredAt: '2026-11-06T24:00:00Z', summary: 'End of day', links: {} },
+				{ id: 'early-year', repositoryId: 'extension', kind: 'commit', occurredAt: '0099-01-01T00:00:00Z', summary: 'Early year', links: {} },
+			],
+		});
+		assert.deepStrictEqual(timeline.events.map(event => event.id), ['end-of-day', 'early-year']);
 	});
 
 	test('orders equivalent instants by id even when timestamp offsets differ', () => {

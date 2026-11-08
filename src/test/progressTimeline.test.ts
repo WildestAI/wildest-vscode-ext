@@ -62,9 +62,10 @@ suite('Progress timeline model', () => {
 	});
 
 	test('does not retain mutable caller-owned evidence', () => {
-		const timeline = buildProgressTimeline(input);
-		input.events[1].links.graphFocus!.paths!.push('mutated.ts');
-		input.events[1].links.diff!.head = 'mutated';
+		const mutableInput = structuredClone(input);
+		const timeline = buildProgressTimeline(mutableInput);
+		mutableInput.events[1].links.graphFocus!.paths!.push('mutated.ts');
+		mutableInput.events[1].links.diff!.head = 'mutated';
 
 		const commitEvent = timeline.events.find(event => event.id === 'commit:extension:def456')!;
 		assert.deepStrictEqual(commitEvent.links.graphFocus!.paths, ['src/utils/progressTimeline.ts']);

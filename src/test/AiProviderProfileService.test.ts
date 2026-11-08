@@ -200,10 +200,14 @@ suite('AiProviderProfileService', () => {
 		assert.strictEqual(requestedUrl, 'http://127.0.0.1:11434/v1/models/local%2Fmodel');
 		assert.strictEqual(requestedAuthorization, 'Bearer private-key');
 
-		for (const [statusCode, expected] of [[401, 'credentials-rejected'], [404, 'unsupported-model'], [429, 'rate-limited'], [503, 'provider-unavailable']] as const) {
+		for (const [statusCode, expected] of [[401, 'credentials-rejected'], [402, 'credits-unavailable'], [404, 'unsupported-model'], [429, 'rate-limited'], [503, 'provider-unavailable']] as const) {
 			const result = await AiProviderProfileService.preflight(profile, secrets, async () => statusCode);
 			assert.strictEqual(result.status, expected);
 			assert.ok(!result.detail.includes('private-key'));
+			if (statusCode === 402) {
+				assert.match(result.detail, /expired account credits/i);
+				assert.match(result.detail, /Deterministic Git and DiffGraph workflows remain available/);
+			}
 		}
 	});
 
@@ -218,6 +222,41 @@ suite('AiProviderProfileService', () => {
 		});
 		assert.strictEqual(failed.status, 'connection-failed');
 		assert.ok(!failed.detail.includes('secret-value'));
+	});
+
+	test('preflight reports timeouts separately without leaking key material', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		const result = await AiProviderProfileService.preflight(profile, { get: async () => 'secret-value' } as any, async () => {
+			throw new Error('Provider request timed out: secret-value');
+		});
+
+		assert.strictEqual(result.status, 'connection-timed-out');
+		assert.match(result.detail, /timed out/);
+		assert.match(result.detail, /Deterministic Git and DiffGraph workflows remain available/);
+		assert.ok(!result.detail.includes('secret-value'));
+
+		const codeResult = await AiProviderProfileService.preflight(profile, { get: async () => 'secret-value' } as any, async () => {
+			const error = new Error('Provider request failed: secret-value') as Error & { code?: string };
+			error.code = 'ETIMEDOUT';
+			throw error;
+		});
+		assert.strictEqual(codeResult.status, 'connection-timed-out');
+
+		const dnsResult = await AiProviderProfileService.preflight(profile, { get: async () => 'secret-value' } as any, async () => {
+			const error = new Error('getaddrinfo ENOTFOUND api.timeout.example: secret-value') as Error & { code?: string };
+			error.code = 'ENOTFOUND';
+			throw error;
+		});
+		assert.strictEqual(dnsResult.status, 'connection-failed');
+
+		const transientDnsResult = await AiProviderProfileService.preflight(profile, { get: async () => 'secret-value' } as any, async () => {
+			const error = new Error('getaddrinfo EAI_AGAIN api.timeout.example: secret-value') as Error & { code?: string };
+			error.code = 'EAI_AGAIN';
+			throw error;
+		});
+		assert.strictEqual(transientDnsResult.status, 'connection-failed');
 	});
 
 	test('preflight classifies SecretStorage read failures without sending a request', async () => {

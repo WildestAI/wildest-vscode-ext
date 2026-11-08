@@ -20,7 +20,7 @@ export interface AiProviderReadiness {
 }
 
 export interface AiProviderPreflight {
-	status: 'disabled' | 'needs-configuration' | 'ready' | 'credentials-rejected' | 'unsupported-model' | 'rate-limited' | 'provider-unavailable' | 'connection-failed';
+	status: 'disabled' | 'needs-configuration' | 'ready' | 'credentials-rejected' | 'credits-unavailable' | 'unsupported-model' | 'rate-limited' | 'provider-unavailable' | 'connection-timed-out' | 'connection-failed';
 	detail: string;
 }
 
@@ -185,6 +185,9 @@ export class AiProviderProfileService {
 			if (statusCode === 401 || statusCode === 403) {
 				return { status: 'credentials-rejected', detail: `${profile.provider} rejected the configured credentials. Check the API key or account credits, then try again.` };
 			}
+			if (statusCode === 402) {
+				return { status: 'credits-unavailable', detail: `${profile.provider} reported unavailable or expired account credits. Add credits or select another configured provider; Deterministic Git and DiffGraph workflows remain available.` };
+			}
 			if (statusCode === 404) {
 				return { status: 'unsupported-model', detail: `${profile.provider} could not find the configured model. Choose a model available to this account or endpoint.` };
 			}
@@ -195,9 +198,25 @@ export class AiProviderProfileService {
 				return { status: 'provider-unavailable', detail: `${profile.provider} is currently unavailable. Deterministic Git and DiffGraph workflows remain available.` };
 			}
 			return { status: 'connection-failed', detail: `The ${profile.provider} preflight returned HTTP ${statusCode}. Check the endpoint configuration and try again.` };
-		} catch {
+		} catch (error) {
+			if (this.isTimeoutError(error)) {
+				return { status: 'connection-timed-out', detail: `The ${profile.provider} preflight timed out. Check the endpoint, network, and proxy settings, then try again. Deterministic Git and DiffGraph workflows remain available.` };
+			}
 			return { status: 'connection-failed', detail: `Could not connect to ${profile.provider}. Check the endpoint, network, and proxy settings, then try again.` };
 		}
+	}
+
+	private static isTimeoutError(error: unknown): boolean {
+		if (!error || typeof error !== 'object') {
+			return false;
+		}
+		const candidate = error as { code?: unknown; name?: unknown; message?: unknown };
+		return candidate.code === 'ETIMEDOUT'
+			|| candidate.name === 'TimeoutError'
+			|| (candidate.code !== 'ENOTFOUND'
+				&& candidate.code !== 'EAI_AGAIN'
+				&& typeof candidate.message === 'string'
+				&& /\b(?:timed?\s*out|timeout)\b/i.test(candidate.message));
 	}
 
 	private static modelEndpoint(profile: AiProviderProfile): URL {

@@ -20,7 +20,7 @@ export interface AiProviderReadiness {
 }
 
 export interface AiProviderPreflight {
-	status: 'disabled' | 'needs-configuration' | 'ready' | 'credentials-rejected' | 'unsupported-model' | 'rate-limited' | 'provider-unavailable' | 'connection-timed-out' | 'connection-failed';
+	status: 'disabled' | 'needs-configuration' | 'ready' | 'credentials-rejected' | 'credits-unavailable' | 'unsupported-model' | 'rate-limited' | 'provider-unavailable' | 'connection-timed-out' | 'connection-failed';
 	detail: string;
 }
 
@@ -184,6 +184,9 @@ export class AiProviderProfileService {
 			}
 			if (statusCode === 401 || statusCode === 403) {
 				return { status: 'credentials-rejected', detail: `${profile.provider} rejected the configured credentials. Check the API key or account credits, then try again.` };
+			}
+			if (statusCode === 402) {
+				return { status: 'credits-unavailable', detail: `${profile.provider} reported unavailable or expired account credits. Add credits or select another configured provider; Deterministic Git and DiffGraph workflows remain available.` };
 			}
 			if (statusCode === 404) {
 				return { status: 'unsupported-model', detail: `${profile.provider} could not find the configured model. Choose a model available to this account or endpoint.` };

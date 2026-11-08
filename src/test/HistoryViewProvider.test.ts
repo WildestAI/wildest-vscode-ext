@@ -455,6 +455,9 @@ suite('HistoryViewProvider cache policy', () => {
 
 	test('failed refresh preserves previously rendered history after cache invalidation', async () => {
 		await (provider as any).loadGitHistory(false);
+		const initial = messages.find(message => message.type === 'commits');
+		assert.ok(initial);
+		assert.strictEqual(initial.commits[0].hash, commit.hash);
 		GitHistoryCache.invalidate(repoRoot);
 		messages = [];
 		GitService.runGit = async () => { throw new Error('failed'); };
@@ -467,6 +470,11 @@ suite('HistoryViewProvider cache policy', () => {
 		await (provider as any).loadGitHistory(true);
 
 		assert.strictEqual(messages.some(message => message.type === 'error'), false);
+		assert.strictEqual(messages.some(message => message.type === 'empty'), false);
+		for (const message of messages.filter(message => message.type === 'commits')) {
+			assert.deepStrictEqual(message.commits, initial.commits);
+			assert.strictEqual(message.repoPath, initial.repoPath);
+		}
 		assert.match(warning, /Showing the last cached result/);
 	});
 

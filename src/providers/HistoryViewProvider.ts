@@ -347,6 +347,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				return;
 			}
 			if (repositories.length === 0) {
+				this._lastRenderedHistoryRepoRoot = undefined;
 				view.webview.postMessage({ type: 'empty' });
 				return;
 			}
@@ -438,6 +439,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			if (hasUsableHistory) {
 				void vscode.window.showWarningMessage('WildestAI could not refresh Git history. Showing the last cached result.');
 			} else {
+				this._lastRenderedHistoryRepoRoot = undefined;
 				view.webview.postMessage({ type: 'error', message: error.message ?? String(error) });
 			}
 

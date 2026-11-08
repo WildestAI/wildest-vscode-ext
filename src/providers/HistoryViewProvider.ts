@@ -36,6 +36,10 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private _refreshCancellation?: vscode.CancellationTokenSource;
 	private _activeForceRefresh = false;
 	private _pendingForceRefresh = false;
+	// This records what is already visible, independently of the short-lived
+	// fetch cache. Invalidating the cache must not replace a usable graph with
+	// an error when its replacement cannot be read.
+	private _lastRenderedHistoryRepoRoot?: string;
 	private _nextCachedGraphPaintId = 0;
 	private _nextHistoryLoadId = 0;
 	private _lastCompletedPerformanceSnapshotLoadId = 0;
@@ -349,6 +353,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 			const repoRoot = repositories[0].repoRoot;
 			this._currentRepoRoot = repoRoot;
+			hasUsableHistory = this._lastRenderedHistoryRepoRoot === repoRoot;
 			await this.ensureRepositoryWatcher(repoRoot);
 			const repoName = path.basename(repoRoot);
 
@@ -382,6 +387,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					cachePaintId,
 				});
 				hasUsableHistory = true;
+				this._lastRenderedHistoryRepoRoot = repoRoot;
 				source = 'cache';
 				if (!forceRefresh) {
 					return;
@@ -419,6 +425,8 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 				repoPath: repoRoot,
 				repoName
 			});
+			hasUsableHistory = true;
+			this._lastRenderedHistoryRepoRoot = repoRoot;
 			source = 'git';
 		} catch (error: any) {
 			if (error instanceof CliCancelledError || error instanceof GitCommandCancelledError) {

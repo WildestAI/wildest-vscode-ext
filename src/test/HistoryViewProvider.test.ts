@@ -453,6 +453,23 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.ok(timing.gitFetchMs !== undefined && timing.gitFetchMs >= 0);
 	});
 
+	test('failed refresh preserves previously rendered history after cache invalidation', async () => {
+		await (provider as any).loadGitHistory(false);
+		GitHistoryCache.invalidate(repoRoot);
+		messages = [];
+		GitService.runGit = async () => { throw new Error('failed'); };
+		let warning = '';
+		vscode.window.showWarningMessage = ((message: string) => {
+			warning = message;
+			return Promise.resolve(undefined);
+		}) as typeof vscode.window.showWarningMessage;
+
+		await (provider as any).loadGitHistory(true);
+
+		assert.strictEqual(messages.some(message => message.type === 'error'), false);
+		assert.match(warning, /Showing the last cached result/);
+	});
+
 	test('schedules another refresh when Git history times out', async () => {
 		let resolveRetry: () => void;
 		const retryCompleted = new Promise<void>(resolve => { resolveRetry = resolve; });

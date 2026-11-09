@@ -19,6 +19,7 @@ const GIT_LOCATION_VARIABLES = new Set([
 function parseArguments(argv) {
 	let commits = 100;
 	let json = false;
+	let maxSecondReadMs;
 	for (let index = 0; index < argv.length; index += 1) {
 		const argument = argv[index];
 		if (argument === '--json') {
@@ -34,13 +35,23 @@ function parseArguments(argv) {
 			index += 1;
 			continue;
 		}
+		if (argument === '--max-second-read-ms') {
+			const operand = argv[index + 1];
+			const value = Number(operand);
+			if (operand === undefined || operand.trim() === '' || !Number.isFinite(value) || value < 0) {
+				throw new Error('--max-second-read-ms must be a non-negative number.');
+			}
+			maxSecondReadMs = value;
+			index += 1;
+			continue;
+		}
 		if (argument === '--help') {
-			console.log('Usage: node scripts/benchmark-history.mjs [--commits 100] [--json]');
+			console.log('Usage: node scripts/benchmark-history.mjs [--commits 100] [--max-second-read-ms 300] [--json]');
 			process.exit(0);
 		}
 		throw new Error(`Unknown argument: ${argument}`);
 	}
-	return { commits, json };
+	return { commits, json, maxSecondReadMs };
 }
 
 async function runGit(repository, args, environment = {}) {
@@ -98,7 +109,7 @@ async function gitVersion() {
 }
 
 async function main() {
-	const { commits, json } = parseArguments(process.argv.slice(2));
+	const { commits, json, maxSecondReadMs } = parseArguments(process.argv.slice(2));
 	const repository = await createFixture(commits);
 	try {
 		const firstRead = await timedHistoryRead(repository);
@@ -111,8 +122,13 @@ async function main() {
 				secondNativeGitHistoryReadMs: secondRead.elapsedMs,
 				commitsReturned: secondRead.commitsReturned,
 			},
+			budget: maxSecondReadMs === undefined ? undefined : {
+				maxSecondNativeGitHistoryReadMs: maxSecondReadMs,
+				status: secondRead.elapsedMs <= maxSecondReadMs ? 'pass' : 'fail',
+			},
 			notes: [
 				'Both samples run the exact native git log invocation used by HistoryViewProvider.',
+				'The optional --max-second-read-ms limit gates only the native Git second-read measurement; it does not claim an extension in-memory cache or webview first-paint budget.',
 				'The second read may benefit from the operating-system filesystem cache; neither sample claims an OS-cold baseline, extension in-memory cache, or webview first-paint measurement.',
 			],
 		};
@@ -120,6 +136,11 @@ async function main() {
 			console.log(JSON.stringify(result));
 		} else {
 			console.log(JSON.stringify(result, null, 2));
+		}
+		if (result.budget?.status === 'fail') {
+			throw new Error(
+				`Native Git second read took ${secondRead.elapsedMs.toFixed(1)} ms, exceeding ${maxSecondReadMs} ms.`,
+			);
 		}
 	} finally {
 		await rm(repository, { recursive: true, force: true });

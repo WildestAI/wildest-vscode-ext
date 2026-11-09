@@ -21,6 +21,43 @@ test('history benchmark emits reproducible, explicitly-scoped JSON measurements'
 	assert.match(result.notes.join(' '), /neither sample claims an OS-cold baseline/i);
 });
 
+test('history benchmark can enforce an explicitly-scoped native Git second-read budget', async () => {
+	const { stdout } = await execFileAsync(process.execPath, [
+		script,
+		'--commits', '50',
+		'--max-second-read-ms', '10000',
+		'--json',
+	]);
+	const result = JSON.parse(stdout);
+
+	assert.deepEqual(result.budget, {
+		maxSecondNativeGitHistoryReadMs: 10000,
+		status: 'pass',
+	});
+	assert.match(result.notes.join(' '), /does not claim an extension in-memory cache/i);
+});
+
+test('history benchmark reports and rejects a breached native Git second-read budget', async () => {
+	await assert.rejects(
+		execFileAsync(process.execPath, [
+			script,
+			'--commits', '50',
+			'--max-second-read-ms', '0',
+			'--json',
+		]),
+		error => {
+			const result = JSON.parse(error.stdout);
+			assert.equal(error.code, 1);
+			assert.deepEqual(result.budget, {
+				maxSecondNativeGitHistoryReadMs: 0,
+				status: 'fail',
+			});
+			assert.ok(result.measurements.secondNativeGitHistoryReadMs > 0);
+			return true;
+		},
+	);
+});
+
 test('history benchmark ignores a caller-supplied Git directory', async () => {
 	const { stdout } = await execFileAsync(process.execPath, [script, '--commits', '50', '--json'], {
 		env: { ...process.env, GIT_DIR: '/nonexistent/wildest-benchmark-git-dir' },
@@ -33,4 +70,13 @@ test('history benchmark rejects fixture sizes that cannot exercise the 50-commit
 		execFileAsync(process.execPath, [script, '--commits', '49']),
 		/--commits must be an integer from 50 to 10000/,
 	);
+});
+
+test('history benchmark rejects an invalid native Git second-read budget', async () => {
+	for (const value of ['-1', '', '   ']) {
+		await assert.rejects(
+			execFileAsync(process.execPath, [script, '--max-second-read-ms', value]),
+			/--max-second-read-ms must be a non-negative number/,
+		);
+	}
 });

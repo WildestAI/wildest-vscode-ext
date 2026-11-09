@@ -36,8 +36,9 @@ function parseArguments(argv) {
 			continue;
 		}
 		if (argument === '--max-second-read-ms') {
-			const value = Number(argv[index + 1]);
-			if (!Number.isFinite(value) || value < 0) {
+			const operand = argv[index + 1];
+			const value = Number(operand);
+			if (operand === undefined || operand.trim() === '' || !Number.isFinite(value) || value < 0) {
 				throw new Error('--max-second-read-ms must be a non-negative number.');
 			}
 			maxSecondReadMs = value;

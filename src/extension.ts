@@ -164,7 +164,7 @@ export function activate(context: vscode.ExtensionContext) {
 		const confirmation = await vscode.window.showWarningMessage(
 			removesConfiguredKey
 				? `Disable optional AI prose and remove the ${profile.provider} API key from VS Code SecretStorage? This cannot be undone.`
-				: 'Disable optional AI prose? Deterministic workflows remain available.',
+				: `Disable optional AI prose and remove any previously stored ${profile.provider} API key from VS Code SecretStorage? This cannot be undone.`,
 			{ modal: true },
 			confirmationLabel,
 		);
@@ -173,7 +173,7 @@ export function activate(context: vscode.ExtensionContext) {
 			await AiProviderProfileService.disableAndRemoveActiveKey(profile, context.secrets);
 			void vscode.window.showInformationMessage(removesConfiguredKey
 				? 'WildestAI optional AI prose is disabled and the active provider key was removed. Deterministic workflows remain available.'
-				: 'WildestAI optional AI prose is disabled. Deterministic workflows remain available.');
+				: 'WildestAI optional AI prose is disabled and any previously stored active provider key was removed. Deterministic workflows remain available.');
 		} catch (error) {
 			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to disable the AI provider and remove its key.');
 		}

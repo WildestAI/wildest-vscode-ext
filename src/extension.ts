@@ -210,8 +210,16 @@ export function activate(context: vscode.ExtensionContext) {
 				prompt: 'Model name', value: current.provider === provider ? current.model : undefined, ignoreFocusOut: true,
 			});
 			if (provider !== 'disabled' && !model) { return; }
-			const credentialFreeLocal = provider === 'openai-compatible'
-				&& /^http:\/\/(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:\/|$)/i.test(baseUrl!);
+			let credentialFreeLocal = false;
+			if (provider === 'openai-compatible') {
+				try {
+					const parsedBaseUrl = new URL(baseUrl!);
+					credentialFreeLocal = (parsedBaseUrl.protocol === 'http:' || parsedBaseUrl.protocol === 'https:')
+						&& (parsedBaseUrl.hostname === 'localhost' || parsedBaseUrl.hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(parsedBaseUrl.hostname));
+				} catch {
+					// normalize() reports malformed URLs after the setup flow completes.
+				}
+			}
 			const authChoice = credentialFreeLocal ? await vscode.window.showQuickPick([
 				{ label: 'No API key', description: 'Credential-free local endpoint' },
 				{ label: 'Use API key', description: 'Store a local gateway key in VS Code SecretStorage' },

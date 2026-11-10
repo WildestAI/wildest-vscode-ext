@@ -204,19 +204,26 @@ export function activate(context: vscode.ExtensionContext) {
 				prompt: 'Model name', value: current.provider === provider ? current.model : undefined, ignoreFocusOut: true,
 			});
 			if (provider !== 'disabled' && !model) { return; }
+			const credentialFreeLocal = provider === 'openai-compatible'
+				&& /^http:\/\/(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:\/|$)/i.test(baseUrl!);
+			const authChoice = credentialFreeLocal ? await vscode.window.showQuickPick([
+				{ label: 'No API key', description: 'Credential-free local endpoint' },
+				{ label: 'Use API key', description: 'Store a local gateway key in VS Code SecretStorage' },
+			], { placeHolder: 'Does this local endpoint require an API key?' }) : undefined;
+			if (credentialFreeLocal && !authChoice) { return; }
 			profile = AiProviderProfileService.normalize({
 				provider, baseUrl, model, capabilities: provider === 'disabled' ? [] : ['prose'],
-				authSource: provider === 'disabled' ? 'none' : 'secret-storage',
+				authSource: provider === 'disabled' ? 'none' : authChoice?.label === 'No API key' ? 'none' : 'secret-storage',
 			});
 		} catch (error) {
 			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to configure the AI provider.');
 			return;
 		}
 
-		const apiKey = provider === 'disabled' ? undefined : await vscode.window.showInputBox({
+		const apiKey = profile.authSource === 'secret-storage' ? await vscode.window.showInputBox({
 			prompt: `API key for ${provider} (stored only in VS Code SecretStorage)`, password: true, ignoreFocusOut: true,
-		});
-		if (provider !== 'disabled' && !apiKey) { return; }
+		}) : undefined;
+		if (profile.authSource === 'secret-storage' && !apiKey) { return; }
 		try {
 			await AiProviderProfileService.saveProfile(profile, context.secrets, apiKey);
 		} catch (error) {

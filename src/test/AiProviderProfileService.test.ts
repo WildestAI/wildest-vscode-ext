@@ -62,6 +62,35 @@ suite('AiProviderProfileService', () => {
 		}
 	});
 
+
+	test('permits a credential-free loopback OpenAI-compatible provider only', () => {
+		const local = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', model: 'local-model', capabilities: ['prose'], authSource: 'none',
+		});
+		assert.strictEqual(local.authSource, 'none');
+		assert.throws(() => AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'https://gateway.example.com/v1', model: 'remote-model', capabilities: ['prose'], authSource: 'none',
+		}), /loopback endpoints/);
+		assert.throws(() => AiProviderProfileService.normalize({
+			provider: 'openai', capabilities: ['prose'], authSource: 'none',
+		}), /loopback endpoints/);
+	});
+
+	test('preflights credential-free local endpoints without a SecretStorage lookup or authorization header', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', model: 'local-model', capabilities: ['prose'], authSource: 'none',
+		});
+		let readSecret = false;
+		let headers: Record<string, string> | undefined;
+		const result = await AiProviderProfileService.preflight(profile, { get: async () => { readSecret = true; return 'unused'; } } as any, async (_url, requestHeaders) => {
+			headers = requestHeaders;
+			return 200;
+		});
+		assert.strictEqual(result.status, 'ready');
+		assert.strictEqual(readSecret, false);
+		assert.deepStrictEqual(headers, {});
+	});
+
 	test('stores enabled-provider credentials before publishing profile configuration', async () => {
 		const events: string[] = [];
 		const secrets = { store: async () => { events.push('store'); } } as any;

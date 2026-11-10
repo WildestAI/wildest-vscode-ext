@@ -283,7 +283,7 @@ export class AiProviderProfileService {
 	): Promise<void> {
 		const normalized = this.normalize(profile);
 		await configuration.update(profileSetting, { provider: 'disabled', ...defaults.disabled }, vscode.ConfigurationTarget.Global);
-		if (normalized.provider !== 'disabled' && normalized.authSource === 'secret-storage') {
+		if (normalized.provider !== 'disabled') {
 			try {
 				await secrets.delete(this.secretKey(normalized.provider));
 			} catch (deletionError) {

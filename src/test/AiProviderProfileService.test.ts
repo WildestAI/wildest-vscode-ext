@@ -119,6 +119,22 @@ suite('AiProviderProfileService', () => {
 		]);
 	});
 
+	test('removes a legacy key when disabling a credential-free local provider', async () => {
+		const events: string[] = [];
+		const secrets = { delete: async (key: string) => { events.push(`delete:${key}`); } } as any;
+		const configuration = { update: async (key: string, value: unknown) => { events.push(`update:${key}:${JSON.stringify(value)}`); } } as any;
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', model: 'local-model', capabilities: ['prose'], authSource: 'none',
+		});
+
+		await AiProviderProfileService.disableAndRemoveActiveKey(profile, secrets, configuration);
+
+		assert.deepStrictEqual(events, [
+			'update:ai.providerProfile:{"provider":"disabled","capabilities":[],"authSource":"none"}',
+			'delete:wildestai.ai.provider-key.openai-compatible',
+		]);
+	});
+
 	test('retains the active key when disabling cannot be persisted', async () => {
 		let deleted = false;
 		const secrets = { delete: async () => { deleted = true; } } as any;

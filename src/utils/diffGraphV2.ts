@@ -1,7 +1,17 @@
 // Copyright (C) 2026 Wildest AI
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/** Runtime contract for canonical DiffGraph v2 JSON artifacts. */
+/**
+ * Runtime contract for canonical DiffGraph v2 JSON artifacts.
+ *
+ * The allowed shape comes from the wild CLI's own packaged JSON Schema,
+ * vendored in src/contract/ and refreshed from each CLI release by the
+ * release handoff. Validation stays fail-closed (unknown properties and enum
+ * values are rejected exactly where the CLI's schema rejects them), but a new
+ * additive schema minor only needs the vendored schema synced, not new code.
+ */
+
+import * as schemaModule from '../contract/diffgraph-v2.schema.json';
 
 export const supportedDiffGraphSchemaMajor = 2;
 
@@ -24,12 +34,28 @@ export interface DiffGraphEvidence {
 	[key: string]: unknown;
 }
 
+/** Optional AI prose attached to a node (schema 2.1+); always `inferred`. */
+export interface DiffGraphSummary {
+	text: string;
+	analysis_source: 'inferred';
+	confidence?: number | null;
+	evidence: DiffGraphEvidence[];
+}
+
+/** Exact declaration text on one side of a changed symbol (schema 2.1+). */
+export interface DiffGraphSourceSpan {
+	line_start: number;
+	text: string;
+	truncated: boolean;
+}
+
 export interface DiffGraphFile {
 	id: string;
 	path: string;
 	old_path?: string | null;
 	language?: string | null;
-	change_kind: 'added' | 'modified' | 'deleted' | 'renamed' | 'renamed_modified';
+	/** `unchanged` marks a context file outside the diff (callers/importers). */
+	change_kind: 'added' | 'modified' | 'deleted' | 'renamed' | 'renamed_modified' | 'unchanged';
 	lines_added?: number | null;
 	lines_removed?: number | null;
 	analysis_source: 'structural';
@@ -39,6 +65,8 @@ export interface DiffGraphFile {
 		analysis_source: AnalysisSource;
 		evidence?: DiffGraphEvidence[];
 	} | null;
+	summary?: DiffGraphSummary | null;
+	diff?: { unified: string; truncated: boolean };
 }
 
 export interface DiffGraphSymbol {
@@ -52,6 +80,8 @@ export interface DiffGraphSymbol {
 	analysis_source: AnalysisSource;
 	location?: { file: string; line_start: number; line_end: number } | null;
 	evidence?: DiffGraphEvidence[];
+	summary?: DiffGraphSummary | null;
+	source?: { before: DiffGraphSourceSpan | null; after: DiffGraphSourceSpan | null };
 }
 
 export interface DiffGraphRelationship {
@@ -72,21 +102,19 @@ export interface DiffGraphV2 {
 	generated_at: string;
 	wild_version: string;
 	diff_ref: {
-		kind: 'unstaged' | 'staged' | 'commit_range' | 'file_scope';
+		kind: 'unstaged' | 'staged' | 'commit_range' | 'working_tree' | 'file_scope';
 		base_ref?: string | null;
 		head_ref?: string | null;
+		requested_base_ref?: string | null;
+		requested_head_ref?: string | null;
+		comparison_mode?: 'two_dot' | 'three_dot' | null;
 		pathspecs?: string[];
 		repo_root?: string;
 	};
 	files: DiffGraphFile[];
 	symbols: DiffGraphSymbol[];
 	relationships: DiffGraphRelationship[];
-	summary?: {
-		text: string;
-		analysis_source: 'inferred';
-		confidence?: number | null;
-		evidence: DiffGraphEvidence[];
-	} | null;
+	summary?: DiffGraphSummary | null;
 	metadata: {
 		privacy_tier: 'local' | 'cloud_llm' | 'cloud_backend';
 		cloud_providers_used?: string[];
@@ -108,258 +136,170 @@ export class DiffGraphContractError extends Error {
 	}
 }
 
+type Schema = Record<string, unknown>;
+
+/** The wild CLI's packaged DiffGraph v2 schema (JSON imports may be wrapped in `default`). */
+const rootSchema: Schema = ((schemaModule as unknown as { default?: Schema }).default ?? schemaModule) as Schema;
+
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const dateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const analysisSources = ['structural', 'inferred', 'derived'] as const;
-const evidenceKinds = ['git_diff_stat', 'git_diff_name_status', 'path_pattern', 'ast_parse',
-	'import_statement', 'call_site', 'llm_inference', 'structural_basis'] as const;
+const patternCache = new Map<string, RegExp>();
 
 function fail(path: string, detail: string): never {
 	throw new DiffGraphContractError(`DiffGraph artifact validation failed at ${path}: ${detail}`);
 }
 
-function objectAt(value: unknown, path: string): Record<string, unknown> {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-		fail(path, 'expected an object');
-	}
-	return value as Record<string, unknown>;
+function childPath(path: string, key: string): string {
+	return path === '<root>' ? key : `${path}.${key}`;
 }
 
-function exactKeys(value: Record<string, unknown>, allowed: readonly string[], path: string): void {
-	const unknown = Object.keys(value).find(key => !allowed.includes(key));
-	if (unknown) {
-		fail(`${path}.${unknown}`, 'unknown property');
-	}
+function isObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function required(value: Record<string, unknown>, keys: readonly string[], path: string): void {
-	const missing = keys.find(key => !(key in value));
-	if (missing) {
-		fail(path, `missing required property '${missing}'`);
+function resolveRef(ref: string): Schema {
+	if (!ref.startsWith('#/')) {
+		throw new DiffGraphContractError(`DiffGraph schema uses an unsupported $ref ${ref}`);
 	}
+	let node: unknown = rootSchema;
+	for (const part of ref.slice(2).split('/')) {
+		node = isObject(node) ? node[part] : undefined;
+	}
+	if (!isObject(node)) {
+		throw new DiffGraphContractError(`DiffGraph schema $ref ${ref} does not resolve`);
+	}
+	return node;
 }
 
-function stringAt(value: unknown, path: string): asserts value is string {
-	if (typeof value !== 'string') {
-		fail(path, 'expected a string');
-	}
-}
-
-function enumAt<T extends string>(value: unknown, allowed: readonly T[], path: string): asserts value is T {
-	if (typeof value !== 'string' || !allowed.includes(value as T)) {
-		fail(path, `expected one of ${allowed.join(', ')}`);
-	}
-}
-
-function booleanAt(value: unknown, path: string): void {
-	if (typeof value !== 'boolean') {
-		fail(path, 'expected a boolean');
+function matchesType(value: unknown, type: string): boolean {
+	switch (type) {
+		case 'null': return value === null;
+		case 'boolean': return typeof value === 'boolean';
+		case 'string': return typeof value === 'string';
+		case 'number': return typeof value === 'number' && Number.isFinite(value);
+		case 'integer': return typeof value === 'number' && Number.isInteger(value);
+		case 'array': return Array.isArray(value);
+		case 'object': return isObject(value);
+		default: throw new DiffGraphContractError(`DiffGraph schema uses an unsupported type ${type}`);
 	}
 }
 
-function numberAt(value: unknown, path: string, minimum = 0, maximum?: number): void {
-	if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || (maximum !== undefined && value > maximum)) {
-		fail(path, `expected a number from ${minimum}${maximum === undefined ? '' : ` to ${maximum}`}`);
+function sameValue(left: unknown, right: unknown): boolean {
+	return left === right || JSON.stringify(left) === JSON.stringify(right);
+}
+
+function passes(value: unknown, schema: Schema, path: string): DiffGraphContractError | undefined {
+	try {
+		check(value, schema, path);
+		return undefined;
+	} catch (error) {
+		if (error instanceof DiffGraphContractError) {
+			return error;
+		}
+		throw error;
 	}
 }
 
-function integerAt(value: unknown, path: string, minimum = 0): void {
-	numberAt(value, path, minimum);
-	if (!Number.isInteger(value)) {
-		fail(path, 'expected an integer');
+/** Validate ``value`` against a JSON Schema (2020-12) node, for the keywords the CLI schema uses. */
+function check(value: unknown, schema: Schema, path: string): void {
+	if (typeof schema.$ref === 'string') {
+		check(value, resolveRef(schema.$ref), path);
 	}
-}
-
-function nullable<T>(value: unknown, validate: (candidate: unknown) => T): void {
-	if (value !== null) {
-		validate(value);
+	if (schema.type !== undefined) {
+		const types = (Array.isArray(schema.type) ? schema.type : [schema.type]) as string[];
+		if (!types.some(type => matchesType(value, type))) {
+			fail(path, `expected ${types.join(' or ')}`);
+		}
 	}
-}
-
-function arrayAt(value: unknown, path: string): unknown[] {
-	if (!Array.isArray(value)) {
-		fail(path, 'expected an array');
+	if ('const' in schema && !sameValue(value, schema.const)) {
+		fail(path, `expected ${JSON.stringify(schema.const)}`);
 	}
-	return value;
-}
-
-function stringArrayAt(value: unknown, path: string): void {
-	arrayAt(value, path).forEach((item, index) => stringAt(item, `${path}[${index}]`));
-}
-
-function optional(value: Record<string, unknown>, key: string, validate: (candidate: unknown, path: string) => void, path: string): void {
-	if (key in value) {
-		validate(value[key], `${path}.${key}`);
+	if (Array.isArray(schema.enum) && !schema.enum.some(option => sameValue(option, value))) {
+		fail(path, `expected one of ${schema.enum.map(option => JSON.stringify(option)).join(', ')}`);
 	}
-}
-
-function evidenceAt(value: unknown, path: string): DiffGraphEvidence {
-	const evidence = objectAt(value, path);
-	required(evidence, ['kind'], path);
-	enumAt(evidence.kind, evidenceKinds, `${path}.kind`);
-	for (const key of ['file', 'snippet', 'pattern', 'detail', 'model', 'prompt_ref']) {
-		optional(evidence, key, stringAt, path);
+	if (typeof value === 'string') {
+		if (typeof schema.pattern === 'string') {
+			let pattern = patternCache.get(schema.pattern);
+			if (!pattern) {
+				pattern = new RegExp(schema.pattern, 'u');
+				patternCache.set(schema.pattern, pattern);
+			}
+			if (!pattern.test(value)) {
+				fail(path, `does not match pattern ${schema.pattern}`);
+			}
+		}
+		if (schema.format === 'date-time' && (!dateTimePattern.test(value) || Number.isNaN(Date.parse(value)))) {
+			fail(path, 'expected an ISO 8601 date-time');
+		}
 	}
-	for (const key of ['line_start', 'line_end']) {
-		optional(evidence, key, (item, itemPath) => integerAt(item, itemPath, 1), path);
+	if (typeof value === 'number') {
+		if (typeof schema.minimum === 'number' && value < schema.minimum) {
+			fail(path, `expected a value of at least ${schema.minimum}`);
+		}
+		if (typeof schema.maximum === 'number' && value > schema.maximum) {
+			fail(path, `expected a value of at most ${schema.maximum}`);
+		}
 	}
-	optional(evidence, 'temperature', (item, itemPath) => numberAt(item, itemPath, 0, 2), path);
-	for (const key of ['symbol_ids', 'file_ids']) {
-		optional(evidence, key, stringArrayAt, path);
+	if (Array.isArray(value)) {
+		if (typeof schema.minItems === 'number' && value.length < schema.minItems) {
+			fail(path, `expected at least ${schema.minItems} item(s)`);
+		}
+		if (isObject(schema.items)) {
+			const items = schema.items;
+			value.forEach((item, index) => check(item, items, `${path}[${index}]`));
+		}
+		if (isObject(schema.contains)) {
+			const contains = schema.contains;
+			if (!value.some((item, index) => passes(item, contains, `${path}[${index}]`) === undefined)) {
+				fail(path, 'no item matches a required entry');
+			}
+		}
 	}
-	return evidence as unknown as DiffGraphEvidence;
-}
-
-function evidenceArrayAt(value: unknown, path: string): DiffGraphEvidence[] {
-	return arrayAt(value, path).map((item, index) => evidenceAt(item, `${path}[${index}]`));
-}
-
-function classificationAt(value: unknown, path: string): void {
-	if (value === null) { return; }
-	const classification = objectAt(value, path);
-	exactKeys(classification, ['is_test', 'analysis_source', 'evidence'], path);
-	required(classification, ['is_test', 'analysis_source'], path);
-	booleanAt(classification.is_test, `${path}.is_test`);
-	enumAt(classification.analysis_source, analysisSources, `${path}.analysis_source`);
-	optional(classification, 'evidence', evidenceArrayAt, path);
-}
-
-function fileAt(value: unknown, path: string): DiffGraphFile {
-	const file = objectAt(value, path);
-	exactKeys(file, ['id', 'path', 'old_path', 'language', 'change_kind', 'lines_added', 'lines_removed',
-		'analysis_source', 'evidence', 'classification'], path);
-	required(file, ['id', 'path', 'change_kind', 'analysis_source'], path);
-	stringAt(file.id, `${path}.id`);
-	if (!file.id.startsWith('file::')) { fail(`${path}.id`, "expected prefix 'file::'"); }
-	stringAt(file.path, `${path}.path`);
-	optional(file, 'old_path', (item, itemPath) => nullable(item, candidate => stringAt(candidate, itemPath)), path);
-	optional(file, 'language', (item, itemPath) => nullable(item, candidate => stringAt(candidate, itemPath)), path);
-	enumAt(file.change_kind, ['added', 'modified', 'deleted', 'renamed', 'renamed_modified'], `${path}.change_kind`);
-	for (const key of ['lines_added', 'lines_removed']) {
-		optional(file, key, (item, itemPath) => nullable(item, candidate => integerAt(candidate, itemPath)), path);
+	if (isObject(value)) {
+		if (Array.isArray(schema.required)) {
+			for (const key of schema.required as string[]) {
+				if (!(key in value)) {
+					fail(path, `missing required property '${key}'`);
+				}
+			}
+		}
+		const properties = isObject(schema.properties) ? schema.properties : {};
+		for (const [key, item] of Object.entries(value)) {
+			const propertySchema = properties[key];
+			if (isObject(propertySchema)) {
+				check(item, propertySchema, childPath(path, key));
+			} else if (schema.additionalProperties === false) {
+				fail(`${path}.${key}`, 'unknown property');
+			} else if (isObject(schema.additionalProperties)) {
+				check(item, schema.additionalProperties, childPath(path, key));
+			}
+		}
 	}
-	if (file.analysis_source !== 'structural') { fail(`${path}.analysis_source`, "expected 'structural'"); }
-	optional(file, 'evidence', evidenceArrayAt, path);
-	optional(file, 'classification', classificationAt, path);
-	return file as unknown as DiffGraphFile;
-}
-
-function symbolAt(value: unknown, path: string): DiffGraphSymbol {
-	const symbol = objectAt(value, path);
-	exactKeys(symbol, ['id', 'name', 'qualified_name', 'file_id', 'kind', 'parent_id', 'change_kind',
-		'analysis_source', 'location', 'evidence'], path);
-	required(symbol, ['id', 'name', 'file_id', 'kind', 'change_kind', 'analysis_source'], path);
-	stringAt(symbol.id, `${path}.id`);
-	if (!/^sym::.+::.+/.test(symbol.id)) { fail(`${path}.id`, 'invalid symbol id'); }
-	stringAt(symbol.name, `${path}.name`);
-	optional(symbol, 'qualified_name', (item, itemPath) => nullable(item, candidate => stringAt(candidate, itemPath)), path);
-	stringAt(symbol.file_id, `${path}.file_id`);
-	if (!symbol.file_id.startsWith('file::')) { fail(`${path}.file_id`, "expected prefix 'file::'"); }
-	enumAt(symbol.kind, ['function', 'class', 'method', 'import', 'constant', 'type_alias', 'module'], `${path}.kind`);
-	optional(symbol, 'parent_id', (item, itemPath) => nullable(item, candidate => {
-		stringAt(candidate, itemPath);
-		if (!/^sym::.+::.+/.test(candidate)) { fail(itemPath, 'invalid parent symbol id'); }
-	}), path);
-	enumAt(symbol.change_kind, ['added', 'modified', 'deleted', 'unchanged'], `${path}.change_kind`);
-	enumAt(symbol.analysis_source, analysisSources, `${path}.analysis_source`);
-	optional(symbol, 'location', locationAt, path);
-	optional(symbol, 'evidence', evidenceArrayAt, path);
-	if (symbol.analysis_source === 'inferred' && (!Array.isArray(symbol.evidence) || symbol.evidence.length === 0)) {
-		fail(`${path}.evidence`, 'inferred symbols require evidence');
+	if (Array.isArray(schema.allOf)) {
+		for (const part of schema.allOf as Schema[]) {
+			check(value, part, path);
+		}
 	}
-	return symbol as unknown as DiffGraphSymbol;
-}
-
-function locationAt(value: unknown, path: string): void {
-	if (value === null) { return; }
-	const location = objectAt(value, path);
-	exactKeys(location, ['file', 'line_start', 'line_end'], path);
-	required(location, ['file', 'line_start', 'line_end'], path);
-	stringAt(location.file, `${path}.file`);
-	integerAt(location.line_start, `${path}.line_start`, 1);
-	integerAt(location.line_end, `${path}.line_end`, 1);
-}
-
-function relationshipAt(value: unknown, path: string): DiffGraphRelationship {
-	const relationship = objectAt(value, path);
-	exactKeys(relationship, ['id', 'kind', 'source_id', 'target_id', 'analysis_source', 'confidence',
-		'resolution_method', 'evidence', 'label'], path);
-	required(relationship, ['id', 'kind', 'source_id', 'target_id', 'analysis_source'], path);
-	for (const key of ['id', 'source_id', 'target_id']) { stringAt(relationship[key], `${path}.${key}`); }
-	if (!/^rel::.+->.+/.test(relationship.id as string)) { fail(`${path}.id`, 'invalid relationship id'); }
-	enumAt(relationship.kind, ['imports', 'calls', 'inherits', 'implements', 'defines', 'contains',
-		'semantic_related', 'co_changed'], `${path}.kind`);
-	enumAt(relationship.analysis_source, analysisSources, `${path}.analysis_source`);
-	optional(relationship, 'confidence', (item, itemPath) => nullable(item, candidate => numberAt(candidate, itemPath, 0, 1)), path);
-	optional(relationship, 'resolution_method', (item, itemPath) => nullable(item,
-		candidate => enumAt(candidate, ['import_grounded', 'resolved', 'heuristic'], itemPath)), path);
-	optional(relationship, 'evidence', evidenceArrayAt, path);
-	optional(relationship, 'label', (item, itemPath) => nullable(item, candidate => stringAt(candidate, itemPath)), path);
-	if (relationship.analysis_source === 'inferred') {
-		if (typeof relationship.confidence !== 'number') { fail(`${path}.confidence`, 'inferred relationships require confidence'); }
-		if (!Array.isArray(relationship.evidence) || relationship.evidence.length === 0) { fail(`${path}.evidence`, 'inferred relationships require evidence'); }
+	if (Array.isArray(schema.oneOf)) {
+		const errors = (schema.oneOf as Schema[]).map(option => passes(value, option, path));
+		const matched = errors.filter(error => error === undefined).length;
+		if (matched > 1) {
+			fail(path, 'matches more than one allowed shape');
+		}
+		if (matched === 0) {
+			// Report the most specific failure (the longest, deepest message),
+			// e.g. the field inside an object rather than "expected null".
+			const deepest = (errors as DiffGraphContractError[]).reduce((best, error) =>
+				error.message.length > best.message.length ? error : best);
+			throw deepest;
+		}
 	}
-	return relationship as unknown as DiffGraphRelationship;
-}
-
-function summaryAt(value: unknown, path: string): void {
-	if (value === null) { return; }
-	const summary = objectAt(value, path);
-	exactKeys(summary, ['text', 'analysis_source', 'confidence', 'evidence'], path);
-	required(summary, ['text', 'analysis_source', 'evidence'], path);
-	stringAt(summary.text, `${path}.text`);
-	if (summary.analysis_source !== 'inferred') { fail(`${path}.analysis_source`, "expected 'inferred'"); }
-	optional(summary, 'confidence', (item, itemPath) => nullable(item, candidate => numberAt(candidate, itemPath, 0, 1)), path);
-	const evidence = evidenceArrayAt(summary.evidence, `${path}.evidence`);
-	for (const kind of ['llm_inference', 'structural_basis']) {
-		if (!evidence.some(item => item.kind === kind)) { fail(`${path}.evidence`, `missing ${kind} evidence`); }
+	if (isObject(schema.if)) {
+		const branch = passes(value, schema.if, path) === undefined ? schema.then : schema.else;
+		if (isObject(branch)) {
+			check(value, branch, path);
+		}
 	}
-}
-
-function diffRefAt(value: unknown, path: string): void {
-	const diffRef = objectAt(value, path);
-	exactKeys(diffRef, ['kind', 'base_ref', 'head_ref', 'pathspecs', 'repo_root'], path);
-	required(diffRef, ['kind'], path);
-	enumAt(diffRef.kind, ['unstaged', 'staged', 'commit_range', 'file_scope'], `${path}.kind`);
-	for (const key of ['base_ref', 'head_ref']) {
-		optional(diffRef, key, (item, itemPath) => nullable(item, candidate => stringAt(candidate, itemPath)), path);
-	}
-	optional(diffRef, 'pathspecs', stringArrayAt, path);
-	optional(diffRef, 'repo_root', stringAt, path);
-}
-
-// Keep this in lockstep with wild's v2 warning enum. These resolver
-// failures are intentionally structured: the webview can show an actionable
-// state without treating a failed ref or merge-base lookup as an empty diff.
-const warningCodes = ['PARSE_FAILURE', 'UNSUPPORTED_LANGUAGE', 'PARTIAL_ANALYSIS', 'LLM_TIMEOUT', 'LLM_ERROR',
-	'UNKNOWN', 'not_a_git_repository', 'git_diff_failed', 'malformed_git_output', 'missing_object_id',
-	'unsupported_worktree_entry', 'worktree_read_failed', 'hash_object_failed', 'malformed_hash_object_output',
-	'unmerged_index_entry', 'invalid_base_ref', 'invalid_head_ref', 'merge_base_failed',
-	'malformed_merge_base', 'git_untracked_failed', 'gitlink_head_failed', 'malformed_gitlink_head',
-	'pathspec_outside_repository', 'undecodable_path'] as const;
-
-function metadataAt(value: unknown, path: string): void {
-	const metadata = objectAt(value, path);
-	exactKeys(metadata, ['privacy_tier', 'cloud_providers_used', 'analysis_duration_ms', 'languages_detected',
-		'files_analyzed', 'files_skipped', 'llm_calls', 'llm_model', 'tiers_used', 'warnings'], path);
-	required(metadata, ['privacy_tier'], path);
-	enumAt(metadata.privacy_tier, ['local', 'cloud_llm', 'cloud_backend'], `${path}.privacy_tier`);
-	for (const key of ['cloud_providers_used', 'languages_detected']) { optional(metadata, key, stringArrayAt, path); }
-	for (const key of ['analysis_duration_ms', 'files_analyzed', 'files_skipped', 'llm_calls']) {
-		optional(metadata, key, (item, itemPath) => nullable(item, candidate => integerAt(candidate, itemPath)), path);
-	}
-	optional(metadata, 'llm_model', (item, itemPath) => nullable(item, candidate => stringAt(candidate, itemPath)), path);
-	optional(metadata, 'tiers_used', (item, itemPath) => arrayAt(item, itemPath).forEach((entry, index) =>
-		enumAt(entry, analysisSources, `${itemPath}[${index}]`)), path);
-	optional(metadata, 'warnings', (item, itemPath) => arrayAt(item, itemPath).forEach((entry, index) => {
-		const warningPath = `${itemPath}[${index}]`;
-		const warning = objectAt(entry, warningPath);
-		exactKeys(warning, ['code', 'file', 'detail'], warningPath);
-		required(warning, ['code'], warningPath);
-		enumAt(warning.code, warningCodes, `${warningPath}.code`);
-		optional(warning, 'file', stringAt, warningPath);
-		optional(warning, 'detail', stringAt, warningPath);
-	}), path);
 }
 
 /** Parse JSON and reject anything that is not provably compatible with v2. */
@@ -376,34 +316,17 @@ export function parseDiffGraphArtifact(text: string): DiffGraphV2 {
 
 /** Validate the complete canonical v2 shape. v2 minor bumps remain schema-bound. */
 export function validateDiffGraphArtifact(value: unknown): DiffGraphV2 {
-	const artifact = objectAt(value, '<root>');
-	exactKeys(artifact, ['schema_version', 'generated_at', 'wild_version', 'diff_ref', 'files', 'symbols',
-		'relationships', 'summary', 'metadata'], '<root>');
-	required(artifact, ['schema_version', 'generated_at', 'wild_version', 'diff_ref', 'files', 'symbols',
-		'relationships', 'metadata'], '<root>');
-
-	if (typeof artifact.schema_version !== 'string') {
-		throw new DiffGraphContractError(`DiffGraph schema_version must use MAJOR.MINOR format; received ${JSON.stringify(artifact.schema_version)}`);
+	if (!isObject(value)) {
+		fail('<root>', 'expected object');
 	}
-	const match = versionPattern.exec(artifact.schema_version);
-	if (!match) {
-		throw new DiffGraphContractError(`DiffGraph schema_version must use MAJOR.MINOR format; received ${JSON.stringify(artifact.schema_version)}`);
+	const version = value.schema_version;
+	if (typeof version !== 'string' || !versionPattern.test(version)) {
+		throw new DiffGraphContractError(`DiffGraph schema_version must use MAJOR.MINOR format; received ${JSON.stringify(version)}`);
 	}
-	const major = Number(match[1]);
+	const major = Number(versionPattern.exec(version)![1]);
 	if (major !== supportedDiffGraphSchemaMajor) {
 		throw new DiffGraphContractError(`Unsupported DiffGraph schema major ${major}; this consumer supports major ${supportedDiffGraphSchemaMajor}`);
 	}
-
-	stringAt(artifact.generated_at, 'generated_at');
-	if (!dateTimePattern.test(artifact.generated_at) || Number.isNaN(Date.parse(artifact.generated_at))) {
-		fail('generated_at', 'expected an ISO 8601 date-time');
-	}
-	stringAt(artifact.wild_version, 'wild_version');
-	diffRefAt(artifact.diff_ref, 'diff_ref');
-	arrayAt(artifact.files, 'files').forEach((item, index) => fileAt(item, `files[${index}]`));
-	arrayAt(artifact.symbols, 'symbols').forEach((item, index) => symbolAt(item, `symbols[${index}]`));
-	arrayAt(artifact.relationships, 'relationships').forEach((item, index) => relationshipAt(item, `relationships[${index}]`));
-	optional(artifact, 'summary', summaryAt, '<root>');
-	metadataAt(artifact.metadata, 'metadata');
-	return artifact as unknown as DiffGraphV2;
+	check(value, rootSchema, '<root>');
+	return value as unknown as DiffGraphV2;
 }

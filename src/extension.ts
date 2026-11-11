@@ -24,6 +24,7 @@ import { AiProviderId, AiProviderProfile, AiProviderProfileService } from './ser
 import { formatRuntimeDiagnosticsReport } from './utils/runtimeDiagnosticsReport';
 import { redactDiagnostics } from './utils/redactDiagnostics';
 import { presentRuntimeHealth } from './utils/runtimeHealthPresentation';
+import { getRuntimeHealthRemediation } from './utils/runtimeHealthRemediation';
 import {
 	evaluateCachedGraphFirstPaintBudget,
 	evaluateCancellationAcknowledgementBudget,
@@ -274,9 +275,10 @@ export function activate(context: vscode.ExtensionContext) {
 		runtimeDiagnosticsOutput.appendLine(runtimeReport.report);
 		runtimeDiagnosticsOutput.show(true);
 
-		if (runtimeReport.cliStatus !== 'ready') {
+		const remediation = getRuntimeHealthRemediation(runtimeReport.diagnostics, runtimeReport.probe);
+		if (remediation) {
 			const action = await vscode.window.showWarningMessage(
-				`WildestAI CLI ${runtimeReport.cliStatus}: ${runtimeReport.cliDetail}`,
+				`WildestAI CLI ${remediation.status}: ${redactDiagnostics(remediation.detail)}`,
 				'Recheck Runtime Health',
 				'Open Install Help',
 				'Copy Diagnostics',

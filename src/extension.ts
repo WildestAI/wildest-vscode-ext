@@ -159,15 +159,21 @@ export function activate(context: vscode.ExtensionContext) {
 			void vscode.window.showInformationMessage('WildestAI optional AI prose is already disabled.');
 			return;
 		}
+		const removesConfiguredKey = profile.authSource === 'secret-storage';
+		const confirmationLabel = removesConfiguredKey ? 'Disable and Remove Key' : 'Disable AI Prose';
 		const confirmation = await vscode.window.showWarningMessage(
-			`Disable optional AI prose and remove the ${profile.provider} API key from VS Code SecretStorage? This cannot be undone.`,
+			removesConfiguredKey
+				? `Disable optional AI prose and remove the ${profile.provider} API key from VS Code SecretStorage? This cannot be undone.`
+				: `Disable optional AI prose and remove any previously stored ${profile.provider} API key from VS Code SecretStorage? This cannot be undone.`,
 			{ modal: true },
-			'Disable and Remove Key',
+			confirmationLabel,
 		);
-		if (confirmation !== 'Disable and Remove Key') { return; }
+		if (confirmation !== confirmationLabel) { return; }
 		try {
 			await AiProviderProfileService.disableAndRemoveActiveKey(profile, context.secrets);
-			void vscode.window.showInformationMessage('WildestAI optional AI prose is disabled and the active provider key was removed. Deterministic workflows remain available.');
+			void vscode.window.showInformationMessage(removesConfiguredKey
+				? 'WildestAI optional AI prose is disabled and the active provider key was removed. Deterministic workflows remain available.'
+				: 'WildestAI optional AI prose is disabled and any previously stored active provider key was removed. Deterministic workflows remain available.');
 		} catch (error) {
 			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to disable the AI provider and remove its key.');
 		}
@@ -204,19 +210,34 @@ export function activate(context: vscode.ExtensionContext) {
 				prompt: 'Model name', value: current.provider === provider ? current.model : undefined, ignoreFocusOut: true,
 			});
 			if (provider !== 'disabled' && !model) { return; }
+			let credentialFreeLocal = false;
+			if (provider === 'openai-compatible') {
+				try {
+					const parsedBaseUrl = new URL(baseUrl!);
+					credentialFreeLocal = (parsedBaseUrl.protocol === 'http:' || parsedBaseUrl.protocol === 'https:')
+						&& (parsedBaseUrl.hostname === 'localhost' || parsedBaseUrl.hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(parsedBaseUrl.hostname));
+				} catch {
+					// normalize() reports malformed URLs after the setup flow completes.
+				}
+			}
+			const authChoice = credentialFreeLocal ? await vscode.window.showQuickPick([
+				{ label: 'No API key', description: 'Credential-free local endpoint' },
+				{ label: 'Use API key', description: 'Store a local gateway key in VS Code SecretStorage' },
+			], { placeHolder: 'Does this local endpoint require an API key?' }) : undefined;
+			if (credentialFreeLocal && !authChoice) { return; }
 			profile = AiProviderProfileService.normalize({
 				provider, baseUrl, model, capabilities: provider === 'disabled' ? [] : ['prose'],
-				authSource: provider === 'disabled' ? 'none' : 'secret-storage',
+				authSource: provider === 'disabled' ? 'none' : authChoice?.label === 'No API key' ? 'none' : 'secret-storage',
 			});
 		} catch (error) {
 			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to configure the AI provider.');
 			return;
 		}
 
-		const apiKey = provider === 'disabled' ? undefined : await vscode.window.showInputBox({
+		const apiKey = profile.authSource === 'secret-storage' ? await vscode.window.showInputBox({
 			prompt: `API key for ${provider} (stored only in VS Code SecretStorage)`, password: true, ignoreFocusOut: true,
-		});
-		if (provider !== 'disabled' && !apiKey) { return; }
+		}) : undefined;
+		if (profile.authSource === 'secret-storage' && !apiKey) { return; }
 		try {
 			await AiProviderProfileService.saveProfile(profile, context.secrets, apiKey);
 		} catch (error) {

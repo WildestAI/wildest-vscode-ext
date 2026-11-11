@@ -107,11 +107,14 @@ export class AiProviderProfileService {
 		if (provider === 'disabled' && authSource !== 'none') {
 			throw new Error('The disabled AI provider must use authSource "none".');
 		}
-		if (provider !== 'disabled' && authSource !== 'secret-storage') {
-			throw new Error('Enabled AI providers must use VS Code SecretStorage.');
+		if (provider !== 'disabled' && authSource !== 'secret-storage' && authSource !== 'none') {
+			throw new Error('Enabled AI providers must use VS Code SecretStorage or a credential-free local endpoint.');
 		}
 		if (provider === 'openai-compatible' && !baseUrl) {
 			throw new Error('An OpenAI-compatible provider needs a baseUrl.');
+		}
+		if (provider !== 'disabled' && authSource === 'none' && (provider !== 'openai-compatible' || !this.isLoopbackHost(new URL(baseUrl!).hostname))) {
+			throw new Error('Only OpenAI-compatible loopback endpoints can be configured without an API key.');
 		}
 		return { provider, baseUrl, model, capabilities, authSource };
 	}
@@ -141,6 +144,9 @@ export class AiProviderProfileService {
 		if (profile.provider === 'disabled') {
 			return { status: 'disabled', detail: 'AI prose enrichment is disabled; deterministic Git and DiffGraph workflows remain available.' };
 		}
+		if (profile.authSource === 'none') {
+			return { status: 'ready', detail: `${profile.provider} is configured as a credential-free local endpoint for optional prose enrichment.` };
+		}
 		const key = await secrets.get(this.secretKey(profile.provider));
 		if (!key) {
 			return { status: 'needs-configuration', detail: `No API key is stored for ${profile.provider}. Use “Wildest AI: Configure AI Provider” to save one in VS Code SecretStorage.` };
@@ -165,18 +171,22 @@ export class AiProviderProfileService {
 			return { status: 'connection-failed', detail: `The ${profile.provider} endpoint uses plain HTTP. Use an https:// endpoint, or a loopback address for local models, so the API key is not sent unencrypted.` };
 		}
 		let key: string | undefined;
-		try {
-			key = await secrets.get(this.secretKey(profile.provider));
-		} catch {
-			return { status: 'connection-failed', detail: `Could not read the ${profile.provider} API key from VS Code SecretStorage. Check the VS Code secret store, then try again.` };
-		}
-		if (!key || key.trim().length === 0) {
-			return { status: 'needs-configuration', detail: `No API key is stored for ${profile.provider}. Configure the provider, then test it again.` };
+		if (profile.authSource === 'secret-storage') {
+			try {
+				key = await secrets.get(this.secretKey(profile.provider));
+			} catch {
+				return { status: 'connection-failed', detail: `Could not read the ${profile.provider} API key from VS Code SecretStorage. Check the VS Code secret store, then try again.` };
+			}
+			if (!key || key.trim().length === 0) {
+				return { status: 'needs-configuration', detail: `No API key is stored for ${profile.provider}. Configure the provider, then test it again.` };
+			}
 		}
 
-		const headers: Record<string, string> = profile.provider === 'anthropic'
-			? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
-			: { authorization: `Bearer ${key}` };
+		const headers: Record<string, string> = profile.authSource === 'none'
+			? {}
+			: profile.provider === 'anthropic'
+				? { 'x-api-key': key!, 'anthropic-version': '2023-06-01' }
+				: { authorization: `Bearer ${key!}` };
 		try {
 			const statusCode = await request(url, headers);
 			if (statusCode >= 200 && statusCode < 300) {
@@ -252,7 +262,7 @@ export class AiProviderProfileService {
 		configuration = vscode.workspace.getConfiguration('wildestai'),
 	): Promise<void> {
 		const normalized = this.normalize(profile);
-		if (normalized.provider !== 'disabled') {
+		if (normalized.provider !== 'disabled' && normalized.authSource === 'secret-storage') {
 			if (typeof apiKey !== 'string' || apiKey.trim().length === 0) {
 				throw new Error('An API key is required before enabling an AI provider.');
 			}

@@ -17,13 +17,16 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { buildHtmlDiffArgs, buildJsonDiffArgs, DiffService, matchesRendererArtifact } from '../services/DiffService';
 import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
+import { DiffGraphCache } from '../services/DiffGraphCache';
+import { GitService } from '../services/GitService';
 
 suite('DiffService Test Suite', () => {
 	let mockContext: vscode.ExtensionContext;
 
 	setup(() => {
 		mockContext = {
-			extensionPath: '/mock/extension/path'
+			extensionPath: '/mock/extension/path',
+			subscriptions: [],
 		} as unknown as vscode.ExtensionContext;
 	});
 
@@ -79,6 +82,31 @@ suite('DiffService Test Suite', () => {
 			/DiffGraph output was not created/,
 		);
 		assert.match(generationError ?? '', /DiffGraph output was not created/);
+	});
+
+	test('Git repository state changes invalidate cached DiffGraphs without refetching', async () => {
+		const repoRoot = '/path/to/repo';
+		const cache = DiffGraphCache.getInstance();
+		cache.set(repoRoot, 'staged', '/tmp/staged.html');
+		cache.set(repoRoot, 'unstaged', '/tmp/unstaged.html');
+		let onStateChange: (() => void) | undefined;
+		const original = GitService.onDidChangeRepositoryState;
+		(GitService as any).onDidChangeRepositoryState = async (_root: string, listener: () => void) => {
+			onStateChange = listener;
+			return { dispose: () => {} };
+		};
+
+		try {
+			const diffService = new DiffService(mockContext);
+			(diffService as any).watchRepositoryState(mockContext, repoRoot);
+			await Promise.resolve();
+			assert.ok(onStateChange, 'repository state watcher should be registered');
+			onStateChange!();
+			assert.strictEqual(cache.has(repoRoot, 'staged'), false);
+			assert.strictEqual(cache.has(repoRoot, 'unstaged'), false);
+		} finally {
+			(GitService as any).onDidChangeRepositoryState = original;
+		}
 	});
 
 	test('commit requests explicitly select HTML output without changing the range', () => {

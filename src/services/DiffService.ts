@@ -68,12 +68,14 @@ export class DiffService {
 	private _notificationService: NotificationService;
 	private _cache: DiffGraphCache;
 	private _diffGraphViewProvider?: DiffGraphViewProvider;
+	private readonly _repositoryWatchers = new Map<string, Promise<void>>();
 
 	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
 		this._outputChannel = vscode.window.createOutputChannel('WildestAI');
 		this._notificationService = new NotificationService(this._outputChannel);
 		this._cache = DiffGraphCache.getInstance();
 		this._diffGraphViewProvider = diffGraphViewProvider;
+		context.subscriptions.push(this._outputChannel);
 	}
 
 	/**
@@ -117,6 +119,7 @@ export class DiffService {
 				vscode.window.showErrorMessage('No repository found for the commit');
 				return;
 			}
+			this.watchRepositoryState(context, repoRoot);
 			const stage = `commit-${commitHash}`;
 
 			// Check cache first
@@ -141,6 +144,10 @@ export class DiffService {
 		try {
 			const repositories = await GitService.getRepositories();
 			const repoRoot = repoPath || repositories[0]?.repoRoot;
+			if (!repoRoot) {
+				throw new Error('No Git repository found');
+			}
+			this.watchRepositoryState(context, repoRoot);
 			const stage = staged ? 'staged' : 'unstaged';
 			const contentFingerprint = await GitService.getDiffContentFingerprint(repoRoot, staged);
 
@@ -166,6 +173,10 @@ export class DiffService {
 		try {
 			const repositories = await GitService.getRepositories();
 			const repoRoot = repoPath || repositories[0]?.repoRoot;
+			if (!repoRoot) {
+				throw new Error('No Git repository found');
+			}
+			this.watchRepositoryState(context, repoRoot);
 			const stage = staged ? 'staged' : 'unstaged';
 
 			// Invalidate cache
@@ -182,6 +193,33 @@ export class DiffService {
 
 	private useJsonRenderer(): boolean {
 		return vscode.workspace.getConfiguration('wildestai.experimental').get<boolean>('jsonRenderer', false);
+	}
+
+	/**
+	 * Drop rendered artifacts when VS Code reports a Git-state transition. This
+	 * does not regenerate eagerly: events can burst while an agent edits, and
+	 * the next explicit open or refresh computes the current input.
+	 */
+	private watchRepositoryState(context: vscode.ExtensionContext, repoRoot: string): void {
+		if (this._repositoryWatchers.has(repoRoot)) {
+			return;
+		}
+
+		const watcher = GitService.onDidChangeRepositoryState(repoRoot, () => {
+			this._cache.invalidateRepo(repoRoot);
+			this._outputChannel.appendLine(`Invalidated DiffGraph cache after Git state changed in ${path.basename(repoRoot)}`);
+		}).then(subscription => {
+			if (subscription) {
+				context.subscriptions.push(subscription);
+				return;
+			}
+			this._repositoryWatchers.delete(repoRoot);
+		}).catch(error => {
+			this._repositoryWatchers.delete(repoRoot);
+			this._outputChannel.appendLine(`Unable to watch Git state for ${path.basename(repoRoot)}: ${String(error)}`);
+		});
+
+		this._repositoryWatchers.set(repoRoot, watcher);
 	}
 
 	private showDiffError(error: unknown, operation: string): void {

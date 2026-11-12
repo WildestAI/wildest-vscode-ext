@@ -277,13 +277,23 @@ export function activate(context: vscode.ExtensionContext) {
 
 		const remediation = getRuntimeHealthRemediation(runtimeReport.diagnostics, runtimeReport.probe);
 		if (remediation) {
-			const action = await vscode.window.showWarningMessage(
-				`WildestAI CLI ${remediation.status}: ${redactDiagnostics(remediation.detail)}`,
+			const actions = [
+				...(remediation.canRestorePackagedExecutePermission ? ['Restore Execute Permission'] : []),
 				'Recheck Runtime Health',
 				'Open Install Help',
 				'Copy Diagnostics',
+			];
+			const action = await vscode.window.showWarningMessage(
+				`WildestAI CLI ${remediation.status}: ${redactDiagnostics(remediation.detail)}`,
+				...actions,
 			);
-			if (action === 'Recheck Runtime Health') {
+			if (action === 'Restore Execute Permission') {
+				const restored = CliService.restorePackagedExecutablePermission(runtimeReport.diagnostics);
+				void vscode.window.showInformationMessage(restored
+					? 'WildestAI restored execute permission on the verified packaged CLI.'
+					: 'WildestAI could not safely restore execute permission. Reinstall the extension from a trusted source.');
+				await vscode.commands.executeCommand('wildestai.recheckRuntimeHealth');
+			} else if (action === 'Recheck Runtime Health') {
 				await vscode.commands.executeCommand('wildestai.recheckRuntimeHealth');
 			} else if (action === 'Open Install Help') {
 				await vscode.env.openExternal(vscode.Uri.parse('https://marketplace.visualstudio.com/items?itemName=WildestAI.wildest-vscode-ext'));

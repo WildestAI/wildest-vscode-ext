@@ -56,6 +56,7 @@ export interface RuntimeEnvironment {
 	statSync: (candidate: fs.PathLike) => fs.Stats;
 	readFileHeader?: (candidate: fs.PathLike, length: number) => Buffer;
 	readFile?: (candidate: fs.PathLike) => Buffer;
+	chmodSync?: (candidate: fs.PathLike, mode: number) => void;
 	isQuarantined?: (candidate: fs.PathLike) => boolean;
 }
 
@@ -158,6 +159,40 @@ export class CliService {
 			return this.getDevCommand(args, env, context, runtime);
 		} else {
 			return this.getProdCommand(args, env, context, runtime);
+		}
+	}
+
+	/**
+	 * Safely restore execute bits on a verified packaged CLI. This deliberately
+	 * refuses development runtimes, Windows, and binaries whose release checksum
+	 * cannot be confirmed, so the one-click repair never blesses an altered file.
+	 */
+	public static restorePackagedExecutablePermission(
+		diagnostics: CliRuntimeDiagnostics,
+		runtime: RuntimeEnvironment = this.getRuntimeEnvironment(),
+	): boolean {
+		if (
+			diagnostics.source !== 'packaged binary' ||
+			diagnostics.status !== 'permission-denied' ||
+			!diagnostics.executable ||
+			runtime.platform === 'win32'
+		) {
+			return false;
+		}
+
+		const binaryName = path.basename(diagnostics.executable);
+		if (!this.hasExpectedPackagedChecksum(diagnostics.executable, binaryName, runtime)) {
+			return false;
+		}
+
+		try {
+			const chmodSync = runtime.chmodSync ?? fs.chmodSync;
+			const mode = runtime.statSync(diagnostics.executable).mode;
+			chmodSync(diagnostics.executable, mode | 0o111);
+			return this.inspectPackagedLaunchability(diagnostics.executable, runtime) === 'ready' &&
+				this.hasExpectedPackagedChecksum(diagnostics.executable, binaryName, runtime);
+		} catch {
+			return false;
 		}
 	}
 
@@ -552,6 +587,7 @@ export class CliService {
 			statSync: fs.statSync,
 			readFileHeader: this.readFileHeader,
 			readFile: fs.readFileSync,
+			chmodSync: fs.chmodSync,
 			isQuarantined: this.isQuarantined,
 		};
 	}

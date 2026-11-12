@@ -26,6 +26,7 @@ suite('getRuntimeHealthRemediation', () => {
 
 		assert.deepStrictEqual(remediation, {
 			status: 'missing', detail: 'The packaged CLI is missing.',
+			canRestorePackagedExecutePermission: false,
 		});
 	});
 
@@ -36,6 +37,17 @@ suite('getRuntimeHealthRemediation', () => {
 
 		assert.deepStrictEqual(remediation, {
 			status: 'compatibility incompatible', detail: 'Update the CLI.',
+			canRestorePackagedExecutePermission: false,
 		});
+	});
+
+	test('offers safe execute-bit recovery only for a packaged non-Windows CLI', () => {
+		const remediation = getRuntimeHealthRemediation({
+			...readyRuntime, status: 'permission-denied', detail: 'Cannot execute.',
+		}, {
+			status: 'unavailable', cliVersion: 'not available', schemaSupport: 'not checked', detail: 'Not run.',
+		});
+
+		assert.strictEqual(remediation?.canRestorePackagedExecutePermission, true);
 	});
 });

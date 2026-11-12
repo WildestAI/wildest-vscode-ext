@@ -109,6 +109,46 @@ suite('CliService runtime diagnostics', () => {
 		);
 	});
 
+	test('restores execute permission only after verifying a packaged checksum', () => {
+		const executable = path.join(context.extensionPath, 'bin', 'wild-linux-x64');
+		let executableMode = false;
+		let chmodCalls = 0;
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => { if (!executableMode) { throw fileError('EACCES'); } },
+			statSync: () => ({ isFile: () => true, mode: 0o644 } as fs.Stats),
+			readFile: checksumFixtureReadFile,
+			chmodSync: (candidate: fs.PathLike, mode: number) => {
+				assert.strictEqual(candidate.toString(), executable);
+				assert.strictEqual(mode, 0o755);
+				chmodCalls += 1;
+				executableMode = true;
+			},
+		};
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.status, 'permission-denied');
+		assert.strictEqual(CliService.restorePackagedExecutablePermission(diagnostics, runtime), true);
+		assert.strictEqual(chmodCalls, 1);
+	});
+
+	test('refuses permission repair when the packaged checksum cannot be verified', () => {
+		const executable = path.join(context.extensionPath, 'bin', 'wild-linux-x64');
+		let chmodCalls = 0;
+		const runtime = {
+			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {},
+			existsSync: () => true,
+			accessSync: () => { throw fileError('EACCES'); },
+			statSync: () => ({ isFile: () => true, mode: 0o644 } as fs.Stats),
+			readFile: () => Buffer.from('altered binary'),
+			chmodSync: () => { chmodCalls += 1; },
+		};
+		const diagnostics = CliService.inspectRuntime(context, runtime);
+		assert.strictEqual(diagnostics.executable, executable);
+		assert.strictEqual(CliService.restorePackagedExecutablePermission(diagnostics, runtime), false);
+		assert.strictEqual(chmodCalls, 0);
+	});
+
 	test('keeps missing and invalid packaged command failures actionable', () => {
 		const missingRuntime = {
 			platform: 'linux' as NodeJS.Platform, architecture: 'x64', env: {}, existsSync: () => false,

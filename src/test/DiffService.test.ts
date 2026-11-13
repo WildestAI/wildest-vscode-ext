@@ -84,6 +84,42 @@ suite('DiffService Test Suite', () => {
 		assert.match(generationError ?? '', /DiffGraph output was not created/);
 	});
 
+	test('coalesces concurrent generation requests for the same immutable diff input', async () => {
+		const diffService = new DiffService(mockContext);
+		let calls = 0;
+		let releaseGeneration: (() => void) | undefined;
+		(diffService as any).runGenerateAndShowDiff = async () => {
+			calls++;
+			await new Promise<void>(resolve => { releaseGeneration = resolve; });
+		};
+
+		const first = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'same-input');
+		const second = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'same-input');
+
+		assert.strictEqual(calls, 1, 'same input should start only one CLI generation');
+		releaseGeneration!();
+		await Promise.all([first, second]);
+		assert.strictEqual((diffService as any)._inFlightDiffGenerations.size, 0, 'completed work must not stay coalesced forever');
+	});
+
+	test('does not coalesce generation requests when the diff input changed', async () => {
+		const diffService = new DiffService(mockContext);
+		let calls = 0;
+		let releaseGeneration: (() => void) | undefined;
+		const generationReleased = new Promise<void>(resolve => { releaseGeneration = resolve; });
+		(diffService as any).runGenerateAndShowDiff = async () => {
+			calls++;
+			await generationReleased;
+		};
+
+		const first = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'before');
+		const second = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'after');
+
+		assert.strictEqual(calls, 2, 'a new diff fingerprint must not wait behind stale work');
+		releaseGeneration!();
+		await Promise.all([first, second]);
+	});
+
 	test('Git repository state changes invalidate cached DiffGraphs without refetching', async () => {
 		const repoRoot = '/path/to/repo';
 		const cache = DiffGraphCache.getInstance();

@@ -69,6 +69,12 @@ export class DiffService {
 	private _cache: DiffGraphCache;
 	private _diffGraphViewProvider?: DiffGraphViewProvider;
 	private readonly _repositoryWatchers = new Map<string, Promise<void>>();
+	/**
+	 * Concurrent requests for the same immutable working-tree input share one CLI
+	 * render. A changed fingerprint receives its own request, so a newer diff can
+	 * never be hidden behind an older render.
+	 */
+	private readonly _inFlightDiffGenerations = new Map<string, Promise<void>>();
 
 	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
 		this._outputChannel = vscode.window.createOutputChannel('WildestAI');
@@ -285,6 +291,35 @@ export class DiffService {
 	 * Generates and shows diff content, caching the result
 	 */
 	private async generateAndShowDiff(
+		context: vscode.ExtensionContext,
+		repoRoot: string,
+		stage: 'staged' | 'unstaged',
+		contentFingerprint: string
+	): Promise<void> {
+		const generationKey = JSON.stringify({
+			repoRoot,
+			stage,
+			contentFingerprint,
+			renderer: this.useJsonRenderer() ? 'json' : 'html',
+		});
+		const inFlight = this._inFlightDiffGenerations.get(generationKey);
+		if (inFlight) {
+			this._outputChannel.appendLine(`Coalescing duplicate ${stage} DiffGraph request for ${path.basename(repoRoot)}`);
+			return inFlight;
+		}
+
+		const generation = this.runGenerateAndShowDiff(context, repoRoot, stage, contentFingerprint);
+		this._inFlightDiffGenerations.set(generationKey, generation);
+		try {
+			await generation;
+		} finally {
+			if (this._inFlightDiffGenerations.get(generationKey) === generation) {
+				this._inFlightDiffGenerations.delete(generationKey);
+			}
+		}
+	}
+
+	private async runGenerateAndShowDiff(
 		context: vscode.ExtensionContext,
 		repoRoot: string,
 		stage: 'staged' | 'unstaged',

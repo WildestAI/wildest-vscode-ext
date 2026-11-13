@@ -88,8 +88,10 @@ suite('DiffService Test Suite', () => {
 		const diffService = new DiffService(mockContext);
 		let calls = 0;
 		let releaseGeneration: (() => void) | undefined;
-		(diffService as any).runGenerateAndShowDiff = async () => {
+		let firstGenerationArgs: any[] | undefined;
+		(diffService as any).runGenerateAndShowDiff = async (...args: any[]) => {
 			calls++;
+			firstGenerationArgs ??= args;
 			await new Promise<void>(resolve => { releaseGeneration = resolve; });
 		};
 
@@ -97,6 +99,7 @@ suite('DiffService Test Suite', () => {
 		const second = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'same-input');
 
 		assert.strictEqual(calls, 1, 'same input should start only one CLI generation');
+		assert.strictEqual(firstGenerationArgs?.[5], false, 'the renderer selected for the key must be passed to generation');
 		releaseGeneration!();
 		await Promise.all([first, second]);
 		assert.strictEqual((diffService as any)._inFlightDiffGenerations.size, 0, 'completed work must not stay coalesced forever');
@@ -118,6 +121,9 @@ suite('DiffService Test Suite', () => {
 		assert.strictEqual(calls, 2, 'a new diff fingerprint must not wait behind stale work');
 		releaseGeneration!();
 		await Promise.all([first, second]);
+		const latestKeys = (diffService as any)._latestDiffGenerationKeys as Map<string, string>;
+		const presentationKey = JSON.stringify({ repoRoot: '/path/to/repo', stage: 'unstaged' });
+		assert.match(latestKeys.get(presentationKey) ?? '', /after/, 'only the newest input may present a graph');
 	});
 
 	test('Git repository state changes invalidate cached DiffGraphs without refetching', async () => {

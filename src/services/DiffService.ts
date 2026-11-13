@@ -75,6 +75,8 @@ export class DiffService {
 	 * never be hidden behind an older render.
 	 */
 	private readonly _inFlightDiffGenerations = new Map<string, Promise<void>>();
+	/** Latest requested working-tree input for each repository/stage presentation slot. */
+	private readonly _latestDiffGenerationKeys = new Map<string, string>();
 
 	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
 		this._outputChannel = vscode.window.createOutputChannel('WildestAI');
@@ -296,19 +298,29 @@ export class DiffService {
 		stage: 'staged' | 'unstaged',
 		contentFingerprint: string
 	): Promise<void> {
+		const useJsonRenderer = this.useJsonRenderer();
 		const generationKey = JSON.stringify({
 			repoRoot,
 			stage,
 			contentFingerprint,
-			renderer: this.useJsonRenderer() ? 'json' : 'html',
+			renderer: useJsonRenderer ? 'json' : 'html',
 		});
+		const presentationKey = JSON.stringify({ repoRoot, stage });
+		this._latestDiffGenerationKeys.set(presentationKey, generationKey);
 		const inFlight = this._inFlightDiffGenerations.get(generationKey);
 		if (inFlight) {
 			this._outputChannel.appendLine(`Coalescing duplicate ${stage} DiffGraph request for ${path.basename(repoRoot)}`);
 			return inFlight;
 		}
 
-		const generation = this.runGenerateAndShowDiff(context, repoRoot, stage, contentFingerprint);
+		const generation = this.runGenerateAndShowDiff(
+			context,
+			repoRoot,
+			stage,
+			contentFingerprint,
+			generationKey,
+			useJsonRenderer
+		);
 		this._inFlightDiffGenerations.set(generationKey, generation);
 		try {
 			await generation;
@@ -323,7 +335,9 @@ export class DiffService {
 		context: vscode.ExtensionContext,
 		repoRoot: string,
 		stage: 'staged' | 'unstaged',
-		contentFingerprint: string
+		contentFingerprint: string,
+		generationKey: string,
+		useJsonRenderer: boolean
 	): Promise<void> {
 		const startTime = Date.now();
 		await this.showLoadingScreen();
@@ -334,8 +348,7 @@ export class DiffService {
 			cancellable: true
 		}, async (progress, cancellationToken) => {
 			try {
-				// Build temp file path
-				const useJsonRenderer = this.useJsonRenderer();
+				// Build temp file path using the renderer captured for this generation key.
 				const outputPath = this.buildTempFilePath(repoRoot, stage, useJsonRenderer ? 'json' : 'html');
 
 				// JSON rendering remains opt-in while the legacy HTML path is the fallback.
@@ -365,6 +378,11 @@ export class DiffService {
 
 				// Show content before announcing success so a missing or invalid artifact
 				// cannot produce a misleading completion notification.
+				const presentationKey = JSON.stringify({ repoRoot, stage });
+				if (this._latestDiffGenerationKeys.get(presentationKey) !== generationKey) {
+					this._outputChannel.appendLine(`Skipping superseded ${stage} DiffGraph presentation`);
+					return;
+				}
 				await this.showWebviewWithContent(outputPath, stage);
 
 				this._notificationService.sendOperationComplete(

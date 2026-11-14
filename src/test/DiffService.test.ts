@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import * as assert from 'assert';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { buildHtmlDiffArgs, buildJsonDiffArgs, DiffService, matchesRendererArtifact } from '../services/DiffService';
 import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
@@ -82,6 +83,73 @@ suite('DiffService Test Suite', () => {
 			/DiffGraph output was not created/,
 		);
 		assert.match(generationError ?? '', /DiffGraph output was not created/);
+	});
+
+	test('does not render a JSON artifact after its generation loses ownership', async () => {
+		let artifactRenderCount = 0;
+		const mockProvider = {
+			showDiffGraphArtifact: async () => { artifactRenderCount++; },
+		} as unknown as DiffGraphViewProvider;
+		const diffService = new DiffService(mockContext, mockProvider);
+		const artifactPath = path.resolve(__dirname, '../../src/test/fixtures/diffgraph-v2.structural.example.json');
+
+		await (diffService as any).showWebviewWithContent(artifactPath, 'unstaged', () => false);
+
+		assert.strictEqual(artifactRenderCount, 0, 'a superseded JSON read must not replace the current graph');
+	});
+
+	test('a cached presentation loses ownership when a newer request claims its slot', () => {
+		const diffService = new DiffService(mockContext);
+		const repoRoot = '/path/to/repo';
+		const stage = 'unstaged';
+		const isCurrentCachedPresentation = (diffService as any).claimDiffPresentation(repoRoot, stage, 'cached');
+		const presentationKey = JSON.stringify({ repoRoot, stage });
+
+		(diffService as any)._latestDiffGenerationKeys.set(presentationKey, 'generation:newer-input');
+
+		assert.strictEqual(isCurrentCachedPresentation(), false, 'a pending cached read must not replace a newer graph');
+	});
+
+	test('coalesces concurrent generation requests for the same immutable diff input', async () => {
+		const diffService = new DiffService(mockContext);
+		let calls = 0;
+		let releaseGeneration: (() => void) | undefined;
+		let firstGenerationArgs: any[] | undefined;
+		(diffService as any).runGenerateAndShowDiff = async (...args: any[]) => {
+			calls++;
+			firstGenerationArgs ??= args;
+			await new Promise<void>(resolve => { releaseGeneration = resolve; });
+		};
+
+		const first = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'same-input');
+		const second = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'same-input');
+
+		assert.strictEqual(calls, 1, 'same input should start only one CLI generation');
+		assert.strictEqual(firstGenerationArgs?.[5], false, 'the renderer selected for the key must be passed to generation');
+		releaseGeneration!();
+		await Promise.all([first, second]);
+		assert.strictEqual((diffService as any)._inFlightDiffGenerations.size, 0, 'completed work must not stay coalesced forever');
+	});
+
+	test('does not coalesce generation requests when the diff input changed', async () => {
+		const diffService = new DiffService(mockContext);
+		let calls = 0;
+		let releaseGeneration: (() => void) | undefined;
+		const generationReleased = new Promise<void>(resolve => { releaseGeneration = resolve; });
+		(diffService as any).runGenerateAndShowDiff = async () => {
+			calls++;
+			await generationReleased;
+		};
+
+		const first = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'before');
+		const second = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'after');
+
+		assert.strictEqual(calls, 2, 'a new diff fingerprint must not wait behind stale work');
+		releaseGeneration!();
+		await Promise.all([first, second]);
+		const latestKeys = (diffService as any)._latestDiffGenerationKeys as Map<string, string>;
+		const presentationKey = JSON.stringify({ repoRoot: '/path/to/repo', stage: 'unstaged' });
+		assert.match(latestKeys.get(presentationKey) ?? '', /after/, 'only the newest input may present a graph');
 	});
 
 	test('Git repository state changes invalidate cached DiffGraphs without refetching', async () => {

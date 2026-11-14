@@ -69,6 +69,15 @@ export class DiffService {
 	private _cache: DiffGraphCache;
 	private _diffGraphViewProvider?: DiffGraphViewProvider;
 	private readonly _repositoryWatchers = new Map<string, Promise<void>>();
+	/**
+	 * Concurrent requests for the same immutable working-tree input share one CLI
+	 * render. A changed fingerprint receives its own request, so a newer diff can
+	 * never be hidden behind an older render.
+	 */
+	private readonly _inFlightDiffGenerations = new Map<string, Promise<void>>();
+	/** Latest requested working-tree input for each repository/stage presentation slot. */
+	private readonly _latestDiffGenerationKeys = new Map<string, string>();
+	private _nextDiffPresentationToken = 0;
 
 	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
 		this._outputChannel = vscode.window.createOutputChannel('WildestAI');
@@ -154,8 +163,11 @@ export class DiffService {
 			// Reuse only an artifact generated from the same immutable diff input.
 			const cachedEntry = this._cache.get(repoRoot, stage, contentFingerprint);
 			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath) && matchesRendererArtifact(cachedEntry.htmlPath, this.useJsonRenderer())) {
+				// A cached view is the newest request for this presentation slot. Give it
+				// its own claim so a pending JSON read cannot replace a newer request.
+				const isCurrentCachedPresentation = this.claimDiffPresentation(repoRoot, stage, 'cached');
 				this._outputChannel.appendLine(`Using cached ${stage} diff for ${path.basename(repoRoot)}`);
-				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
+				await this.showWebviewWithContent(cachedEntry.htmlPath, stage, isCurrentCachedPresentation);
 				return;
 			}
 
@@ -193,6 +205,13 @@ export class DiffService {
 
 	private useJsonRenderer(): boolean {
 		return vscode.workspace.getConfiguration('wildestai.experimental').get<boolean>('jsonRenderer', false);
+	}
+
+	private claimDiffPresentation(repoRoot: string, stage: 'staged' | 'unstaged', source: string): () => boolean {
+		const presentationKey = JSON.stringify({ repoRoot, stage });
+		const token = `${source}:${++this._nextDiffPresentationToken}`;
+		this._latestDiffGenerationKeys.set(presentationKey, token);
+		return () => this._latestDiffGenerationKeys.get(presentationKey) === token;
 	}
 
 	/**
@@ -290,6 +309,47 @@ export class DiffService {
 		stage: 'staged' | 'unstaged',
 		contentFingerprint: string
 	): Promise<void> {
+		const useJsonRenderer = this.useJsonRenderer();
+		const generationKey = JSON.stringify({
+			repoRoot,
+			stage,
+			contentFingerprint,
+			renderer: useJsonRenderer ? 'json' : 'html',
+		});
+		const presentationKey = JSON.stringify({ repoRoot, stage });
+		this._latestDiffGenerationKeys.set(presentationKey, generationKey);
+		const inFlight = this._inFlightDiffGenerations.get(generationKey);
+		if (inFlight) {
+			this._outputChannel.appendLine(`Coalescing duplicate ${stage} DiffGraph request for ${path.basename(repoRoot)}`);
+			return inFlight;
+		}
+
+		const generation = this.runGenerateAndShowDiff(
+			context,
+			repoRoot,
+			stage,
+			contentFingerprint,
+			generationKey,
+			useJsonRenderer
+		);
+		this._inFlightDiffGenerations.set(generationKey, generation);
+		try {
+			await generation;
+		} finally {
+			if (this._inFlightDiffGenerations.get(generationKey) === generation) {
+				this._inFlightDiffGenerations.delete(generationKey);
+			}
+		}
+	}
+
+	private async runGenerateAndShowDiff(
+		context: vscode.ExtensionContext,
+		repoRoot: string,
+		stage: 'staged' | 'unstaged',
+		contentFingerprint: string,
+		generationKey: string,
+		useJsonRenderer: boolean
+	): Promise<void> {
 		const startTime = Date.now();
 		await this.showLoadingScreen();
 
@@ -299,8 +359,7 @@ export class DiffService {
 			cancellable: true
 		}, async (progress, cancellationToken) => {
 			try {
-				// Build temp file path
-				const useJsonRenderer = this.useJsonRenderer();
+				// Build temp file path using the renderer captured for this generation key.
 				const outputPath = this.buildTempFilePath(repoRoot, stage, useJsonRenderer ? 'json' : 'html');
 
 				// JSON rendering remains opt-in while the legacy HTML path is the fallback.
@@ -330,7 +389,16 @@ export class DiffService {
 
 				// Show content before announcing success so a missing or invalid artifact
 				// cannot produce a misleading completion notification.
-				await this.showWebviewWithContent(outputPath, stage);
+				const presentationKey = JSON.stringify({ repoRoot, stage });
+				if (this._latestDiffGenerationKeys.get(presentationKey) !== generationKey) {
+					this._outputChannel.appendLine(`Skipping superseded ${stage} DiffGraph presentation`);
+					return;
+				}
+				const isCurrentGeneration = () => this._latestDiffGenerationKeys.get(presentationKey) === generationKey;
+				await this.showWebviewWithContent(outputPath, stage, isCurrentGeneration);
+				if (!isCurrentGeneration()) {
+					return;
+				}
 
 				this._notificationService.sendOperationComplete(
 					`${stage.charAt(0).toUpperCase() + stage.slice(1)} DiffGraph`,
@@ -364,7 +432,11 @@ export class DiffService {
 	/**
 	 * Shows the HTML content in the existing diffGraphView webview
 	 */
-	private async showWebviewWithContent(htmlFilePath: string, stage: string): Promise<void> {
+	private async showWebviewWithContent(
+		htmlFilePath: string,
+		stage: string,
+		isCurrent: () => boolean = () => true
+	): Promise<void> {
 		if (!this._diffGraphViewProvider) {
 			vscode.window.showErrorMessage('DiffGraphView provider not available');
 			return;
@@ -379,6 +451,10 @@ export class DiffService {
 		}
 		if (path.extname(htmlFilePath) === '.json') {
 			const rawArtifact = await fs.promises.readFile(htmlFilePath, 'utf8');
+			if (!isCurrent()) {
+				this._outputChannel.appendLine(`Skipping superseded ${stage} DiffGraph presentation`);
+				return;
+			}
 			await this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
 			return;
 		}

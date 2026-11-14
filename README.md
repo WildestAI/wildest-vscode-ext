@@ -26,6 +26,14 @@ WildestAI is a Visual Studio Code extension that enhances your development workf
 
 On activation, the status bar checks the bundled CLI in the background and shows a ready or warning state; select it to open the full report. Run **Wildest AI: Show Runtime Diagnostics** from the Command Palette to see the extension version, selected CLI source and path, platform, CLI version, and actionable readiness status. A missing artifact, an unsupported platform/architecture, and a present artifact without execute permission are reported separately. The warning offers safe next steps: recheck after remediation, open the Marketplace install page, or copy redacted diagnostics. **Wildest AI: Recheck Runtime Health** is also available from the Command Palette. Use **Wildest AI: Copy Sanitized Runtime Diagnostics** to copy the same redacted report for a support request without exposing API keys or provider credentials. Both commands use bounded `wild --version` and `wild diff --format json` probes against an isolated synthetic Git fixture to validate deterministic DiffGraph JSON output and its schema major; they do not analyze your repository or contact an AI provider. Probe errors are redacted and the temporary fixture is removed after the check.
 
+### Optional AI provider privacy and data flow
+
+WildestAI’s Git history, DiffGraph generation, cache, and webview remain local and usable when optional AI prose is disabled. Select **Wildest AI: Configure AI Provider** only when you want optional prose enrichment. The picker supports direct OpenAI and Anthropic profiles plus an OpenAI-compatible gateway or local model endpoint; choose the model name for each profile.
+
+Provider profiles store only the provider, base URL, model, capabilities, and authentication mode in VS Code settings. API keys are stored separately in VS Code `SecretStorage`, never in settings, command arguments, extension logs, diagnostics, or generated DiffGraph artifacts. A credential-free profile is allowed only for an OpenAI-compatible loopback endpoint such as `http://127.0.0.1`; non-loopback endpoints require HTTPS before any key can be used.
+
+**Wildest AI: Test AI Provider** is user-invoked. It makes a bounded metadata-only model check to the selected provider or endpoint, reports actionable configuration, credential, credit, model, rate-limit, timeout, and network outcomes, and does not transmit repository source, Git history, DiffGraph content, or prompts. When authentication is configured, the stored key is used only in the provider request header; it is never written to settings, command arguments, logs, diagnostics, or generated artifacts. The extension redacts copied diagnostics. Disabling optional AI prose leaves deterministic workflows available and, after confirmation, removes the active provider key from `SecretStorage`.
+
 ### DiffGraph artifact compatibility
 
 The extension contract tests vendor the CLI's complete local-only DiffGraph v2 example at

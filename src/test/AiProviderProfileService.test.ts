@@ -256,6 +256,27 @@ suite('AiProviderProfileService', () => {
 		}
 	});
 
+
+	test('direct-provider preflight authenticates with the SecretStorage key without exposing it in the result', async () => {
+		for (const provider of ['openai', 'anthropic'] as const) {
+			const profile = AiProviderProfileService.normalize({
+				provider, capabilities: ['prose'], authSource: 'secret-storage',
+			});
+			let observedHeaders: Record<string, string> | undefined;
+			const result = await AiProviderProfileService.preflight(profile, { get: async () => 'stored-secret-value' } as any, async (_url, headers) => {
+				observedHeaders = headers;
+				return 200;
+			});
+			assert.strictEqual(result.status, 'ready');
+			assert.ok(!result.detail.includes('stored-secret-value'));
+			if (provider === 'openai') {
+				assert.deepStrictEqual(observedHeaders, { authorization: 'Bearer stored-secret-value' });
+			} else {
+				assert.deepStrictEqual(observedHeaders, { 'x-api-key': 'stored-secret-value', 'anthropic-version': '2023-06-01' });
+			}
+		}
+	});
+
 	test('preflight reports missing credentials and network failures without leaking key material', async () => {
 		const profile = AiProviderProfileService.normalize({
 			provider: 'anthropic', capabilities: ['prose'], authSource: 'secret-storage',

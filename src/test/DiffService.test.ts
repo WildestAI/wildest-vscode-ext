@@ -98,6 +98,18 @@ suite('DiffService Test Suite', () => {
 		assert.strictEqual(artifactRenderCount, 0, 'a superseded JSON read must not replace the current graph');
 	});
 
+	test('a cached presentation loses ownership when a newer request claims its slot', () => {
+		const diffService = new DiffService(mockContext);
+		const repoRoot = '/path/to/repo';
+		const stage = 'unstaged';
+		const isCurrentCachedPresentation = (diffService as any).claimDiffPresentation(repoRoot, stage, 'cached');
+		const presentationKey = JSON.stringify({ repoRoot, stage });
+
+		(diffService as any)._latestDiffGenerationKeys.set(presentationKey, 'generation:newer-input');
+
+		assert.strictEqual(isCurrentCachedPresentation(), false, 'a pending cached read must not replace a newer graph');
+	});
+
 	test('coalesces concurrent generation requests for the same immutable diff input', async () => {
 		const diffService = new DiffService(mockContext);
 		let calls = 0;

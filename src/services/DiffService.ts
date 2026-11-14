@@ -77,6 +77,7 @@ export class DiffService {
 	private readonly _inFlightDiffGenerations = new Map<string, Promise<void>>();
 	/** Latest requested working-tree input for each repository/stage presentation slot. */
 	private readonly _latestDiffGenerationKeys = new Map<string, string>();
+	private _nextDiffPresentationToken = 0;
 
 	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
 		this._outputChannel = vscode.window.createOutputChannel('WildestAI');
@@ -162,11 +163,11 @@ export class DiffService {
 			// Reuse only an artifact generated from the same immutable diff input.
 			const cachedEntry = this._cache.get(repoRoot, stage, contentFingerprint);
 			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath) && matchesRendererArtifact(cachedEntry.htmlPath, this.useJsonRenderer())) {
-				// A cached view is the newest request for this presentation slot. Any
-				// in-flight generation must not replace it when it finishes.
-				this._latestDiffGenerationKeys.delete(JSON.stringify({ repoRoot, stage }));
+				// A cached view is the newest request for this presentation slot. Give it
+				// its own claim so a pending JSON read cannot replace a newer request.
+				const isCurrentCachedPresentation = this.claimDiffPresentation(repoRoot, stage, 'cached');
 				this._outputChannel.appendLine(`Using cached ${stage} diff for ${path.basename(repoRoot)}`);
-				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
+				await this.showWebviewWithContent(cachedEntry.htmlPath, stage, isCurrentCachedPresentation);
 				return;
 			}
 
@@ -204,6 +205,13 @@ export class DiffService {
 
 	private useJsonRenderer(): boolean {
 		return vscode.workspace.getConfiguration('wildestai.experimental').get<boolean>('jsonRenderer', false);
+	}
+
+	private claimDiffPresentation(repoRoot: string, stage: 'staged' | 'unstaged', source: string): () => boolean {
+		const presentationKey = JSON.stringify({ repoRoot, stage });
+		const token = `${source}:${++this._nextDiffPresentationToken}`;
+		this._latestDiffGenerationKeys.set(presentationKey, token);
+		return () => this._latestDiffGenerationKeys.get(presentationKey) === token;
 	}
 
 	/**

@@ -162,6 +162,9 @@ export class DiffService {
 			// Reuse only an artifact generated from the same immutable diff input.
 			const cachedEntry = this._cache.get(repoRoot, stage, contentFingerprint);
 			if (cachedEntry && fs.existsSync(cachedEntry.htmlPath) && matchesRendererArtifact(cachedEntry.htmlPath, this.useJsonRenderer())) {
+				// A cached view is the newest request for this presentation slot. Any
+				// in-flight generation must not replace it when it finishes.
+				this._latestDiffGenerationKeys.delete(JSON.stringify({ repoRoot, stage }));
 				this._outputChannel.appendLine(`Using cached ${stage} diff for ${path.basename(repoRoot)}`);
 				await this.showWebviewWithContent(cachedEntry.htmlPath, stage);
 				return;
@@ -383,7 +386,11 @@ export class DiffService {
 					this._outputChannel.appendLine(`Skipping superseded ${stage} DiffGraph presentation`);
 					return;
 				}
-				await this.showWebviewWithContent(outputPath, stage);
+				const isCurrentGeneration = () => this._latestDiffGenerationKeys.get(presentationKey) === generationKey;
+				await this.showWebviewWithContent(outputPath, stage, isCurrentGeneration);
+				if (!isCurrentGeneration()) {
+					return;
+				}
 
 				this._notificationService.sendOperationComplete(
 					`${stage.charAt(0).toUpperCase() + stage.slice(1)} DiffGraph`,
@@ -417,7 +424,11 @@ export class DiffService {
 	/**
 	 * Shows the HTML content in the existing diffGraphView webview
 	 */
-	private async showWebviewWithContent(htmlFilePath: string, stage: string): Promise<void> {
+	private async showWebviewWithContent(
+		htmlFilePath: string,
+		stage: string,
+		isCurrent: () => boolean = () => true
+	): Promise<void> {
 		if (!this._diffGraphViewProvider) {
 			vscode.window.showErrorMessage('DiffGraphView provider not available');
 			return;
@@ -432,6 +443,10 @@ export class DiffService {
 		}
 		if (path.extname(htmlFilePath) === '.json') {
 			const rawArtifact = await fs.promises.readFile(htmlFilePath, 'utf8');
+			if (!isCurrent()) {
+				this._outputChannel.appendLine(`Skipping superseded ${stage} DiffGraph presentation`);
+				return;
+			}
 			await this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
 			return;
 		}

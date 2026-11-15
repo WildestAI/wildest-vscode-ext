@@ -144,6 +144,9 @@ export class AiProviderProfileService {
 		if (profile.provider === 'disabled') {
 			return { status: 'disabled', detail: 'AI prose enrichment is disabled; deterministic Git and DiffGraph workflows remain available.' };
 		}
+		if (!profile.model) {
+			return { status: 'needs-configuration', detail: `No model is configured for ${profile.provider}. Configure the provider with a model name, then test it again.` };
+		}
 		if (profile.authSource === 'none') {
 			return { status: 'ready', detail: `${profile.provider} is configured as a credential-free local endpoint for optional prose enrichment.` };
 		}

@@ -25,6 +25,7 @@ import { formatRuntimeDiagnosticsReport } from './utils/runtimeDiagnosticsReport
 import { redactDiagnostics } from './utils/redactDiagnostics';
 import { presentRuntimeHealth } from './utils/runtimeHealthPresentation';
 import { getRuntimeHealthRemediation } from './utils/runtimeHealthRemediation';
+import { createRuntimeHealthRefreshGate } from './utils/runtimeHealthRefresh';
 import {
 	evaluateCachedGraphFirstPaintBudget,
 	evaluateCancellationAcknowledgementBudget,
@@ -37,12 +38,13 @@ async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): 
 	probe: Awaited<ReturnType<typeof CliService.probeRuntime>>;
 	cliStatus: string;
 	cliDetail: string;
+	providerReadiness: 'disabled' | 'ready' | 'needs-configuration';
 }> {
 	const diagnostics = CliService.inspectRuntime(context);
 	const probe = await CliService.probeRuntime(diagnostics);
 	let provider = 'disabled';
 	let providerModel: string | undefined;
-	let providerReadiness = 'needs-configuration';
+	let providerReadiness: 'disabled' | 'ready' | 'needs-configuration' = 'needs-configuration';
 	let providerDetail = 'Invalid provider configuration.';
 
 	try {
@@ -70,6 +72,7 @@ async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): 
 		}),
 		cliStatus: diagnostics.status,
 		cliDetail: redactDiagnostics(diagnostics.detail),
+		providerReadiness,
 	};
 }
 
@@ -177,7 +180,9 @@ export function activate(context: vscode.ExtensionContext) {
 				: 'WildestAI optional AI prose is disabled and any previously stored active provider key was removed. Deterministic workflows remain available.');
 		} catch (error) {
 			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to disable the AI provider and remove its key.');
+			return;
 		}
+		await refreshRuntimeHealthStatus();
 	}));
 
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.testAiProvider', async () => {
@@ -245,6 +250,7 @@ export function activate(context: vscode.ExtensionContext) {
 			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to save the AI provider configuration.');
 			return;
 		}
+		await refreshRuntimeHealthStatus();
 		void vscode.window.showInformationMessage(provider === 'disabled'
 			? 'WildestAI optional AI prose is disabled. Deterministic workflows remain available.'
 			: `WildestAI optional AI prose is configured for ${provider}.`);
@@ -258,9 +264,18 @@ export function activate(context: vscode.ExtensionContext) {
 	runtimeHealthStatus.tooltip = 'Checking WildestAI runtime health…';
 	runtimeHealthStatus.show();
 	context.subscriptions.push(runtimeHealthStatus);
+	const runtimeHealthRefreshGate = createRuntimeHealthRefreshGate();
 	const refreshRuntimeHealthStatus = async (refreshDiagnosticsOutput = false) => {
+		const isCurrentRefresh = runtimeHealthRefreshGate.start();
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
-		runtimeHealthStatus.text = presentRuntimeHealth(runtimeReport.diagnostics, runtimeReport.probe).text;
+		if (!isCurrentRefresh()) {
+			return runtimeReport;
+		}
+		runtimeHealthStatus.text = presentRuntimeHealth(
+			runtimeReport.diagnostics,
+			runtimeReport.probe,
+			runtimeReport.providerReadiness,
+		).text;
 		runtimeHealthStatus.tooltip = runtimeReport.report;
 		if (refreshDiagnosticsOutput) {
 			runtimeDiagnosticsOutput.clear();
@@ -268,6 +283,11 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 		return runtimeReport;
 	};
+	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+		if (event.affectsConfiguration('wildestai.ai.providerProfile')) {
+			void refreshRuntimeHealthStatus();
+		}
+	}));
 	void refreshRuntimeHealthStatus();
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', async () => {
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);

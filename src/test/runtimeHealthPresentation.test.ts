@@ -39,4 +39,22 @@ suite('presentRuntimeHealth', () => {
 		assert.strictEqual(presentation.severity, 'warning');
 		assert.strictEqual(presentation.text, '$(warning) WildestAI CLI: incompatible');
 	});
+
+	test('surfaces missing optional AI configuration after the CLI is verified', () => {
+		const presentation = presentRuntimeHealth(readyRuntime, {
+			status: 'compatible', cliVersion: '1.2.3', schemaSupport: 'schema v2', detail: 'Compatible.',
+		}, 'needs-configuration');
+
+		assert.strictEqual(presentation.severity, 'warning');
+		assert.strictEqual(presentation.text, '$(warning) WildestAI CLI: ready · AI: needs configuration');
+	});
+
+	test('identifies intentional AI-off operation without a warning', () => {
+		const presentation = presentRuntimeHealth(readyRuntime, {
+			status: 'compatible', cliVersion: '1.2.3', schemaSupport: 'schema v2', detail: 'Compatible.',
+		}, 'disabled');
+
+		assert.strictEqual(presentation.severity, 'ready');
+		assert.strictEqual(presentation.text, '$(check) WildestAI CLI: ready · AI: off');
+	});
 });

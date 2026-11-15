@@ -283,6 +283,11 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 		return runtimeReport;
 	};
+	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+		if (event.affectsConfiguration('wildestai.ai.providerProfile')) {
+			void refreshRuntimeHealthStatus();
+		}
+	}));
 	void refreshRuntimeHealthStatus();
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', async () => {
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);

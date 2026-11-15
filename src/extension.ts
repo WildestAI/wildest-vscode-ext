@@ -37,12 +37,13 @@ async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): 
 	probe: Awaited<ReturnType<typeof CliService.probeRuntime>>;
 	cliStatus: string;
 	cliDetail: string;
+	providerReadiness: 'disabled' | 'ready' | 'needs-configuration';
 }> {
 	const diagnostics = CliService.inspectRuntime(context);
 	const probe = await CliService.probeRuntime(diagnostics);
 	let provider = 'disabled';
 	let providerModel: string | undefined;
-	let providerReadiness = 'needs-configuration';
+	let providerReadiness: 'disabled' | 'ready' | 'needs-configuration' = 'needs-configuration';
 	let providerDetail = 'Invalid provider configuration.';
 
 	try {
@@ -70,6 +71,7 @@ async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): 
 		}),
 		cliStatus: diagnostics.status,
 		cliDetail: redactDiagnostics(diagnostics.detail),
+		providerReadiness,
 	};
 }
 
@@ -260,7 +262,11 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(runtimeHealthStatus);
 	const refreshRuntimeHealthStatus = async (refreshDiagnosticsOutput = false) => {
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
-		runtimeHealthStatus.text = presentRuntimeHealth(runtimeReport.diagnostics, runtimeReport.probe).text;
+		runtimeHealthStatus.text = presentRuntimeHealth(
+			runtimeReport.diagnostics,
+			runtimeReport.probe,
+			runtimeReport.providerReadiness,
+		).text;
 		runtimeHealthStatus.tooltip = runtimeReport.report;
 		if (refreshDiagnosticsOutput) {
 			runtimeDiagnosticsOutput.clear();

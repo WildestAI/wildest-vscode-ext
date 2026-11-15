@@ -12,6 +12,7 @@ export interface RuntimeHealthPresentation {
 export function presentRuntimeHealth(
 	diagnostics: CliRuntimeDiagnostics,
 	probe: CliRuntimeProbe,
+	providerReadiness?: 'disabled' | 'ready' | 'needs-configuration',
 ): RuntimeHealthPresentation {
 	if (diagnostics.status !== 'ready') {
 		return {
@@ -27,8 +28,17 @@ export function presentRuntimeHealth(
 		};
 	}
 
+	if (providerReadiness === 'needs-configuration') {
+		return {
+			text: '$(warning) WildestAI CLI: ready · AI: needs configuration',
+			severity: 'warning',
+		};
+	}
+
 	return {
-		text: '$(check) WildestAI CLI: ready',
+		text: providerReadiness === 'disabled'
+			? '$(check) WildestAI CLI: ready · AI: off'
+			: '$(check) WildestAI CLI: ready',
 		severity: 'ready',
 	};
 }

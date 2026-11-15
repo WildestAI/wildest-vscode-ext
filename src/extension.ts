@@ -25,6 +25,7 @@ import { formatRuntimeDiagnosticsReport } from './utils/runtimeDiagnosticsReport
 import { redactDiagnostics } from './utils/redactDiagnostics';
 import { presentRuntimeHealth } from './utils/runtimeHealthPresentation';
 import { getRuntimeHealthRemediation } from './utils/runtimeHealthRemediation';
+import { createRuntimeHealthRefreshGate } from './utils/runtimeHealthRefresh';
 import {
 	evaluateCachedGraphFirstPaintBudget,
 	evaluateCancellationAcknowledgementBudget,
@@ -263,8 +264,13 @@ export function activate(context: vscode.ExtensionContext) {
 	runtimeHealthStatus.tooltip = 'Checking WildestAI runtime health…';
 	runtimeHealthStatus.show();
 	context.subscriptions.push(runtimeHealthStatus);
+	const runtimeHealthRefreshGate = createRuntimeHealthRefreshGate();
 	const refreshRuntimeHealthStatus = async (refreshDiagnosticsOutput = false) => {
+		const isCurrentRefresh = runtimeHealthRefreshGate.start();
 		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
+		if (!isCurrentRefresh()) {
+			return runtimeReport;
+		}
 		runtimeHealthStatus.text = presentRuntimeHealth(
 			runtimeReport.diagnostics,
 			runtimeReport.probe,

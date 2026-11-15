@@ -179,7 +179,9 @@ export function activate(context: vscode.ExtensionContext) {
 				: 'WildestAI optional AI prose is disabled and any previously stored active provider key was removed. Deterministic workflows remain available.');
 		} catch (error) {
 			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to disable the AI provider and remove its key.');
+			return;
 		}
+		await refreshRuntimeHealthStatus();
 	}));
 
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.testAiProvider', async () => {
@@ -247,6 +249,7 @@ export function activate(context: vscode.ExtensionContext) {
 			void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Unable to save the AI provider configuration.');
 			return;
 		}
+		await refreshRuntimeHealthStatus();
 		void vscode.window.showInformationMessage(provider === 'disabled'
 			? 'WildestAI optional AI prose is disabled. Deterministic workflows remain available.'
 			: `WildestAI optional AI prose is configured for ${provider}.`);

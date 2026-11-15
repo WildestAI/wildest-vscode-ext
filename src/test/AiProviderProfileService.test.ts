@@ -229,6 +229,13 @@ suite('AiProviderProfileService', () => {
 		assert.strictEqual(missing.status, 'needs-configuration');
 		assert.match(missing.detail, /SecretStorage/);
 	});
+	test('reports a provider without a model as needing configuration', async () => {
+		const readiness = await AiProviderProfileService.readiness(AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', capabilities: ['prose'], authSource: 'secret-storage',
+		}), { get: async () => 'stored-secret' } as any);
+		assert.strictEqual(readiness.status, 'needs-configuration');
+		assert.match(readiness.detail, /No model is configured/);
+	});
 	test('preflights only the configured model and maps provider failures to actionable safe results', async () => {
 		const profile = AiProviderProfileService.normalize({
 			provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', model: 'local/model', capabilities: ['prose'], authSource: 'secret-storage',

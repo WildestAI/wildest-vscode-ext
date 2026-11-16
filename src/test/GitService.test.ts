@@ -47,6 +47,33 @@ suite('GitService Test Suite', () => {
 		}
 	});
 
+	test('fingerprints an untracked symlink by its link target without reading its destination', async () => {
+		const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wildest-git-service-'));
+		const externalRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wildest-git-service-external-'));
+		try {
+			execFileSync('git', ['init', '--quiet', repoRoot]);
+			const firstTarget = path.join(externalRoot, 'first.txt');
+			const secondTarget = path.join(externalRoot, 'second.txt');
+			await fs.writeFile(firstTarget, 'first external content');
+			await fs.writeFile(secondTarget, 'second external content');
+			const linkPath = path.join(repoRoot, 'outside-link');
+			await fs.symlink(firstTarget, linkPath);
+
+			const initialFingerprint = await GitService.getDiffContentFingerprint(repoRoot, false);
+			await fs.writeFile(firstTarget, 'changed external content');
+			const unchangedLinkFingerprint = await GitService.getDiffContentFingerprint(repoRoot, false);
+			await fs.unlink(linkPath);
+			await fs.symlink(secondTarget, linkPath);
+			const changedLinkFingerprint = await GitService.getDiffContentFingerprint(repoRoot, false);
+
+			assert.strictEqual(unchangedLinkFingerprint, initialFingerprint, 'external destination bytes must not affect the worktree fingerprint');
+			assert.notStrictEqual(changedLinkFingerprint, initialFingerprint, 'the link target itself is part of the worktree input');
+		} finally {
+			await fs.rm(repoRoot, { recursive: true, force: true });
+			await fs.rm(externalRoot, { recursive: true, force: true });
+		}
+	});
+
 	test('fingerprints binary diffs larger than the previous exec buffer limit', async function () {
 		this.timeout(10_000);
 		const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'wildest-git-service-'));

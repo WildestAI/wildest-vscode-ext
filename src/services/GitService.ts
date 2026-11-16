@@ -230,8 +230,18 @@ export class GitService {
 				}
 				hash.update(relativePath);
 				hash.update('\0');
-				for await (const chunk of createReadStream(filePath)) {
-					hash.update(chunk);
+				const stats = await fs.lstat(filePath);
+				if (stats.isSymbolicLink()) {
+					// Preserve the link itself as Git does. Following an untracked link
+					// could read a file outside the repository and would make this cache
+					// key depend on content the worktree does not own.
+					hash.update('symlink\0');
+					hash.update(await fs.readlink(filePath));
+				} else {
+					hash.update('file\0');
+					for await (const chunk of createReadStream(filePath)) {
+						hash.update(chunk);
+					}
 				}
 				hash.update('\0');
 			}

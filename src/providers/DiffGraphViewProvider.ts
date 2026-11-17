@@ -134,6 +134,11 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 			}
 		} catch (error: any) {
 			vscode.window.showErrorMessage(`Failed to show diff graph: ${error.message}`);
+			// Callers use completion to decide whether a replacement graph may be
+			// announced. Do not turn a read/render failure into a false success:
+			// the previous usable graph remains in the webview and the service can
+			// report the failed replacement through its normal error path.
+			throw error;
 		}
 	}
 }

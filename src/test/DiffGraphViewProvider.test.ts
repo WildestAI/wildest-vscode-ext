@@ -41,4 +41,30 @@ suite('DiffGraphViewProvider Test Suite', () => {
 			fs.rmSync(tempDir, { recursive: true, force: true });
 		}
 	});
+
+	test('reports an unreadable replacement instead of treating it as rendered', async () => {
+		const provider = new DiffGraphViewProvider(vscode.Uri.file('/mock/extension'));
+		const webview = { html: '', options: {} } as unknown as vscode.Webview;
+		const view = {
+			webview,
+			visible: true,
+			show: () => undefined
+		} as unknown as vscode.WebviewView;
+		provider.resolveWebviewView(
+			view,
+			{} as vscode.WebviewViewResolveContext,
+			new vscode.CancellationTokenSource().token
+		);
+
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wildest-view-test-'));
+		try {
+			await assert.rejects(
+				() => provider.showDiffGraph(tempDir),
+				/error|EISDIR/i,
+			);
+			assert.strictEqual(webview.html, '', 'an unreadable replacement must not overwrite the current webview');
+		} finally {
+			fs.rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
 });

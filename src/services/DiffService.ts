@@ -214,6 +214,11 @@ export class DiffService {
 
 	private claimDiffPresentation(repoRoot: string, stage: 'staged' | 'unstaged', source: string): () => boolean {
 		const presentationKey = JSON.stringify({ repoRoot, stage });
+		const activeGeneration = this._activeDiffCancellations.get(presentationKey);
+		if (activeGeneration) {
+			this._outputChannel.appendLine(`Cancelling superseded ${stage} DiffGraph generation for ${path.basename(repoRoot)}`);
+			activeGeneration.cancellation.cancel();
+		}
 		const token = `${source}:${++this._nextDiffPresentationToken}`;
 		this._latestDiffGenerationKeys.set(presentationKey, token);
 		return () => this._latestDiffGenerationKeys.get(presentationKey) === token;
@@ -324,12 +329,13 @@ export class DiffService {
 		const presentationKey = JSON.stringify({ repoRoot, stage });
 		this._latestDiffGenerationKeys.set(presentationKey, generationKey);
 		const inFlight = this._inFlightDiffGenerations.get(generationKey);
-		if (inFlight) {
+		const activeGeneration = this._activeDiffCancellations.get(presentationKey);
+		if (inFlight && activeGeneration?.generationKey === generationKey && !activeGeneration.cancellation.token.isCancellationRequested) {
 			this._outputChannel.appendLine(`Coalescing duplicate ${stage} DiffGraph request for ${path.basename(repoRoot)}`);
 			return inFlight;
 		}
 
-		const previous = this._activeDiffCancellations.get(presentationKey);
+		const previous = activeGeneration;
 		if (previous && previous.generationKey !== generationKey) {
 			this._outputChannel.appendLine(`Cancelling superseded ${stage} DiffGraph generation for ${path.basename(repoRoot)}`);
 			previous.cancellation.cancel();
@@ -353,7 +359,7 @@ export class DiffService {
 			if (this._inFlightDiffGenerations.get(generationKey) === generation) {
 				this._inFlightDiffGenerations.delete(generationKey);
 			}
-			if (this._activeDiffCancellations.get(presentationKey)?.generationKey === generationKey) {
+			if (this._activeDiffCancellations.get(presentationKey)?.cancellation === cancellation) {
 				this._activeDiffCancellations.delete(presentationKey);
 			}
 			cancellation.dispose();

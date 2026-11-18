@@ -110,6 +110,24 @@ suite('DiffService Test Suite', () => {
 		assert.strictEqual(isCurrentCachedPresentation(), false, 'a pending cached read must not replace a newer graph');
 	});
 
+	test('a cached presentation cancels active work for its slot', async () => {
+		const diffService = new DiffService(mockContext);
+		let cancellation: vscode.CancellationTokenSource | undefined;
+		let releaseGeneration: (() => void) | undefined;
+		const generationReleased = new Promise<void>(resolve => { releaseGeneration = resolve; });
+		(diffService as any).runGenerateAndShowDiff = async (...args: any[]) => {
+			cancellation = args[6];
+			await generationReleased;
+		};
+
+		const generation = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'active-input');
+		(diffService as any).claimDiffPresentation('/path/to/repo', 'unstaged', 'cached');
+
+		assert.strictEqual(cancellation?.token.isCancellationRequested, true, 'cached content should cancel obsolete CLI work');
+		releaseGeneration!();
+		await generation;
+	});
+
 	test('coalesces concurrent generation requests for the same immutable diff input', async () => {
 		const diffService = new DiffService(mockContext);
 		let calls = 0;
@@ -171,6 +189,29 @@ suite('DiffService Test Suite', () => {
 		releaseGeneration!();
 		await Promise.all([first, second]);
 		assert.strictEqual((diffService as any)._activeDiffCancellations.size, 0, 'completed cancellation state must be released');
+	});
+
+	test('restarts a matching request when its previous generation was cancelled', async () => {
+		const diffService = new DiffService(mockContext);
+		const cancellations: vscode.CancellationTokenSource[] = [];
+		let releaseGeneration: (() => void) | undefined;
+		const generationReleased = new Promise<void>(resolve => { releaseGeneration = resolve; });
+		(diffService as any).runGenerateAndShowDiff = async (...args: any[]) => {
+			cancellations.push(args[6]);
+			await generationReleased;
+		};
+
+		const first = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'first-input');
+		const second = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'second-input');
+		const replacement = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'first-input');
+
+		assert.strictEqual(cancellations.length, 3, 'a cancelled matching generation must be replaced rather than coalesced');
+		assert.strictEqual(cancellations[0].token.isCancellationRequested, true, 'the first generation should be cancelled by the second');
+		assert.strictEqual(cancellations[1].token.isCancellationRequested, true, 'the second generation should be cancelled by the replacement');
+		assert.strictEqual(cancellations[2].token.isCancellationRequested, false, 'the replacement generation should remain active');
+		releaseGeneration!();
+		await Promise.all([first, second, replacement]);
+		assert.strictEqual((diffService as any)._activeDiffCancellations.size, 0, 'a completed replacement must retain and then release its own cancellation state');
 	});
 
 	test('Git repository state changes invalidate cached DiffGraphs without refetching', async () => {

@@ -152,6 +152,27 @@ suite('DiffService Test Suite', () => {
 		assert.match(latestKeys.get(presentationKey) ?? '', /after/, 'only the newest input may present a graph');
 	});
 
+	test('cancels a stale generation when a newer diff fingerprint claims its slot', async () => {
+		const diffService = new DiffService(mockContext);
+		let firstCancellation: vscode.CancellationTokenSource | undefined;
+		let releaseGeneration: (() => void) | undefined;
+		const generationReleased = new Promise<void>(resolve => { releaseGeneration = resolve; });
+		(diffService as any).runGenerateAndShowDiff = async (...args: any[]) => {
+			if (!firstCancellation) {
+				firstCancellation = args[6];
+			}
+			await generationReleased;
+		};
+
+		const first = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'before');
+		const second = (diffService as any).generateAndShowDiff(mockContext, '/path/to/repo', 'unstaged', 'after');
+
+		assert.strictEqual(firstCancellation?.token.isCancellationRequested, true, 'the stale CLI generation should be cancelled');
+		releaseGeneration!();
+		await Promise.all([first, second]);
+		assert.strictEqual((diffService as any)._activeDiffCancellations.size, 0, 'completed cancellation state must be released');
+	});
+
 	test('Git repository state changes invalidate cached DiffGraphs without refetching', async () => {
 		const repoRoot = '/path/to/repo';
 		const cache = DiffGraphCache.getInstance();

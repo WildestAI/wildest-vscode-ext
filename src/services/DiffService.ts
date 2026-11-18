@@ -77,6 +77,11 @@ export class DiffService {
 	private readonly _inFlightDiffGenerations = new Map<string, Promise<void>>();
 	/** Latest requested working-tree input for each repository/stage presentation slot. */
 	private readonly _latestDiffGenerationKeys = new Map<string, string>();
+	/** Active CLI work for each presentation slot, so newer inputs stop stale renders. */
+	private readonly _activeDiffCancellations = new Map<string, {
+		generationKey: string;
+		cancellation: vscode.CancellationTokenSource;
+	}>();
 	private _nextDiffPresentationToken = 0;
 
 	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
@@ -324,13 +329,22 @@ export class DiffService {
 			return inFlight;
 		}
 
+		const previous = this._activeDiffCancellations.get(presentationKey);
+		if (previous && previous.generationKey !== generationKey) {
+			this._outputChannel.appendLine(`Cancelling superseded ${stage} DiffGraph generation for ${path.basename(repoRoot)}`);
+			previous.cancellation.cancel();
+		}
+		const cancellation = new vscode.CancellationTokenSource();
+		this._activeDiffCancellations.set(presentationKey, { generationKey, cancellation });
+
 		const generation = this.runGenerateAndShowDiff(
 			context,
 			repoRoot,
 			stage,
 			contentFingerprint,
 			generationKey,
-			useJsonRenderer
+			useJsonRenderer,
+			cancellation
 		);
 		this._inFlightDiffGenerations.set(generationKey, generation);
 		try {
@@ -339,6 +353,10 @@ export class DiffService {
 			if (this._inFlightDiffGenerations.get(generationKey) === generation) {
 				this._inFlightDiffGenerations.delete(generationKey);
 			}
+			if (this._activeDiffCancellations.get(presentationKey)?.generationKey === generationKey) {
+				this._activeDiffCancellations.delete(presentationKey);
+			}
+			cancellation.dispose();
 		}
 	}
 
@@ -348,7 +366,8 @@ export class DiffService {
 		stage: 'staged' | 'unstaged',
 		contentFingerprint: string,
 		generationKey: string,
-		useJsonRenderer: boolean
+		useJsonRenderer: boolean,
+		generationCancellation: vscode.CancellationTokenSource,
 	): Promise<void> {
 		const startTime = Date.now();
 		await this.showLoadingScreen();
@@ -358,6 +377,7 @@ export class DiffService {
 			title: `Generating ${stage} DiffGraph for ${path.basename(repoRoot)}...`,
 			cancellable: true
 		}, async (progress, cancellationToken) => {
+			const userCancellationSubscription = cancellationToken.onCancellationRequested(() => generationCancellation.cancel());
 			try {
 				// Build temp file path using the renderer captured for this generation key.
 				const outputPath = this.buildTempFilePath(repoRoot, stage, useJsonRenderer ? 'json' : 'html');
@@ -368,7 +388,7 @@ export class DiffService {
 					? buildJsonDiffArgs(outputPath, target)
 					: buildHtmlDiffArgs(outputPath, target);
 				const cliCommand = CliService.setupCommand(args, context);
-				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, cancellationToken);
+				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, generationCancellation.token);
 
 				// Log output
 				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
@@ -377,13 +397,22 @@ export class DiffService {
 				// The worktree can change while the CLI renders. Cache only an artifact
 				// whose input still matches; the just-rendered view remains usable either way.
 				try {
+					if (generationCancellation.token.isCancellationRequested) {
+						throw new CliCancelledError();
+					}
 					const postRenderFingerprint = await GitService.getDiffContentFingerprint(repoRoot, stage === 'staged');
+					if (generationCancellation.token.isCancellationRequested) {
+						throw new CliCancelledError();
+					}
 					if (postRenderFingerprint === contentFingerprint) {
 						this._cache.set(repoRoot, stage, outputPath, contentFingerprint);
 					} else {
 						this._outputChannel.appendLine(`Skipping ${stage} DiffGraph cache because the working tree changed during rendering`);
 					}
 				} catch (error) {
+					if (error instanceof CliCancelledError) {
+						throw error;
+					}
 					this._outputChannel.appendLine(`Skipping ${stage} DiffGraph cache because its post-render fingerprint could not be computed: ${String(error)}`);
 				}
 
@@ -407,6 +436,8 @@ export class DiffService {
 				);
 			} catch (error: any) {
 				throw error;
+			} finally {
+				userCancellationSubscription.dispose();
 			}
 		});
 	}

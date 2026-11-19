@@ -29,6 +29,12 @@ export type HtmlDiffTarget =
 	| { kind: 'working-tree'; staged: boolean }
 	| { kind: 'commit'; commitHash: string };
 
+export interface DiffGraphPerformanceSnapshot {
+	source: 'generation' | 'none';
+	/** CLI generation plus the handoff to the currently selected webview renderer. */
+	structuralDiffMs?: number;
+}
+
 /**
  * Builds the legacy HTML request explicitly so the extension does not depend on
  * the CLI's default output format while the JSON renderer migration is in progress.
@@ -83,6 +89,7 @@ export class DiffService {
 		cancellation: vscode.CancellationTokenSource;
 	}>();
 	private _nextDiffPresentationToken = 0;
+	private _lastPerformanceSnapshot: DiffGraphPerformanceSnapshot = { source: 'none' };
 
 	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
 		this._outputChannel = vscode.window.createOutputChannel('WildestAI');
@@ -120,6 +127,11 @@ export class DiffService {
 	 */
 	public async refreshStagedChanges(context: vscode.ExtensionContext, repoPath?: string): Promise<void> {
 		await this.refreshDiffView(context, true, repoPath);
+	}
+
+	/** Return the most recent completed uncached DiffGraph generation measurement. */
+	public getLastPerformanceSnapshot(): DiffGraphPerformanceSnapshot {
+		return { ...this._lastPerformanceSnapshot };
 	}
 
 	/**
@@ -394,7 +406,9 @@ export class DiffService {
 					? buildJsonDiffArgs(outputPath, target)
 					: buildHtmlDiffArgs(outputPath, target);
 				const cliCommand = CliService.setupCommand(args, context);
+				const cliStartTime = Date.now();
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, generationCancellation.token);
+				const cliGenerationMs = Date.now() - cliStartTime;
 
 				// Log output
 				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
@@ -430,10 +444,16 @@ export class DiffService {
 					return;
 				}
 				const isCurrentGeneration = () => this._latestDiffGenerationKeys.get(presentationKey) === generationKey;
-				await this.showWebviewWithContent(outputPath, stage, isCurrentGeneration);
-				if (!isCurrentGeneration()) {
+				const handoffStartTime = Date.now();
+				const didHandoff = await this.showWebviewWithContent(outputPath, stage, isCurrentGeneration);
+				const webviewHandoffMs = Date.now() - handoffStartTime;
+				if (!didHandoff || !isCurrentGeneration()) {
 					return;
 				}
+				this._lastPerformanceSnapshot = {
+					source: 'generation',
+					structuralDiffMs: cliGenerationMs + webviewHandoffMs,
+				};
 
 				this._notificationService.sendOperationComplete(
 					`${stage.charAt(0).toUpperCase() + stage.slice(1)} DiffGraph`,
@@ -473,10 +493,10 @@ export class DiffService {
 		htmlFilePath: string,
 		stage: string,
 		isCurrent: () => boolean = () => true
-	): Promise<void> {
+	): Promise<boolean> {
 		if (!this._diffGraphViewProvider) {
 			vscode.window.showErrorMessage('DiffGraphView provider not available');
-			return;
+			return false;
 		}
 		// A successful replacement must have a renderable artifact. Do not replace a
 		// previously usable graph with a misleading "no changes" screen when the CLI
@@ -490,12 +510,11 @@ export class DiffService {
 			const rawArtifact = await fs.promises.readFile(htmlFilePath, 'utf8');
 			if (!isCurrent()) {
 				this._outputChannel.appendLine(`Skipping superseded ${stage} DiffGraph presentation`);
-				return;
+				return false;
 			}
-			await this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
-			return;
+			return this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
 		}
-		await this._diffGraphViewProvider.showDiffGraph(htmlFilePath);
+		return this._diffGraphViewProvider.showDiffGraph(htmlFilePath);
 	}
 
 	/**

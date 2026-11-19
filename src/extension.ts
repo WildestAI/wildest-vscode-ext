@@ -31,6 +31,7 @@ import {
 	evaluateCancellationAcknowledgementBudget,
 	evaluateWarmHistoryBudget,
 } from './utils/historyPerformanceBudget';
+import { evaluateStructuralDiffBudget } from './utils/diffGraphPerformanceBudget';
 
 async function buildRuntimeDiagnosticsReport(context: vscode.ExtensionContext): Promise<{
 	report: string;
@@ -121,6 +122,21 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const historyPerformanceOutput = vscode.window.createOutputChannel('WildestAI Performance');
 	context.subscriptions.push(historyPerformanceOutput);
+	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showDiffGraphPerformanceDiagnostics', () => {
+		const timing = diffService.getLastPerformanceSnapshot();
+		const structuralDiffBudget = evaluateStructuralDiffBudget(timing.structuralDiffMs);
+		const structuralDiffResult = structuralDiffBudget.status === 'not-measured'
+			? 'not measured (generate a staged or unstaged DiffGraph first)'
+			: `${structuralDiffBudget.status} (${structuralDiffBudget.measuredMs!.toFixed(1)} ms)`;
+		historyPerformanceOutput.clear();
+		historyPerformanceOutput.appendLine('WildestAI local DiffGraph performance');
+		historyPerformanceOutput.appendLine(`Source: ${timing.source}`);
+		historyPerformanceOutput.appendLine(`Structural diff budget (<${structuralDiffBudget.budgetMs} ms): ${structuralDiffResult}`);
+		historyPerformanceOutput.appendLine('The sample measures CLI generation and webview handoff; it excludes cache lookup and end-to-end command latency.');
+		historyPerformanceOutput.appendLine('This report stays local and contains no repository paths, commits, or telemetry.');
+		historyPerformanceOutput.show(true);
+	}));
+
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showHistoryPerformanceDiagnostics', () => {
 		const timing = historyProvider.getLastPerformanceSnapshot();
 		historyPerformanceOutput.clear();

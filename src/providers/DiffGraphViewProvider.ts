@@ -30,23 +30,28 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 		};
 	}
 
-	public update(htmlContent: string) {
+	public update(htmlContent: string): boolean {
 		if (this._view) {
 			this._view.webview.html = htmlContent;
 			this._view.show?.(true);
+			return true;
 		}
+		return false;
 	}
 
 	/** Render a validated canonical artifact in the VS Code-owned webview shell. */
-	public async showDiffGraphArtifact(artifact: DiffGraphV2): Promise<void> {
+	public async showDiffGraphArtifact(artifact: DiffGraphV2): Promise<boolean> {
 		if (this._view) {
 			this._view.webview.options = {
 				enableScripts: false,
 				localResourceRoots: [this._extensionUri]
 			};
 		}
-		this.update(renderDiffGraphV2(artifact));
-		this._hasUsableGraph = Boolean(this._view);
+		const didHandoff = this.update(renderDiffGraphV2(artifact));
+		if (didHandoff) {
+			this._hasUsableGraph = true;
+		}
+		return didHandoff;
 	}
 
 
@@ -108,7 +113,7 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 	 * Shows the diff graph by loading HTML content from the specified file path
 	 * @param htmlPath - Path to the HTML file to display
 	 */
-	public async showDiffGraph(htmlPath: string) {
+	public async showDiffGraph(htmlPath: string): Promise<boolean> {
 		try {
 			if (!fs.existsSync(htmlPath)) {
 				throw new Error(`HTML file not found: ${htmlPath}`);
@@ -125,13 +130,16 @@ export class DiffGraphViewProvider implements vscode.WebviewViewProvider {
 				};
 			}
 
-			this.update(htmlContent);
-			this._hasUsableGraph = Boolean(this._view);
+			const didHandoff = this.update(htmlContent);
+			if (didHandoff) {
+				this._hasUsableGraph = true;
+			}
 
 			// Reveal the view if it's not visible
-			if (this._view && !this._view.visible) {
+			if (didHandoff && this._view && !this._view.visible) {
 				this._view.show?.(true);
 			}
+			return didHandoff;
 		} catch (error: any) {
 			vscode.window.showErrorMessage(`Failed to show diff graph: ${error.message}`);
 			// Callers use completion to decide whether a replacement graph may be

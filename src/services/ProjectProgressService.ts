@@ -11,14 +11,24 @@ export interface LocalProgressRepository {
 
 /**
  * Count porcelain-v1 records without interpreting user-controlled filenames.
- * With `-z`, rename/copy source paths are a separate NUL-delimited field and
- * do not begin with a two-column status code, so they are not double-counted.
+ * With `-z`, rename/copy source paths are separate NUL-delimited fields. Skip
+ * each source path by position so a filename resembling a status code is not
+ * counted as another change.
  */
 export function countWorkingTreeChanges(porcelain: string): number {
-	return porcelain
-		.split('\0')
-		.filter(record => /^[ MADRCU?!]{2} /.test(record))
-		.length;
+	const records = porcelain.split('\0');
+	let count = 0;
+	for (let index = 0; index < records.length; index++) {
+		const record = records[index];
+		if (!/^[ MADRCTU?!]{2} /.test(record)) {
+			continue;
+		}
+		count++;
+		if (/[RC]/.test(record.slice(0, 2))) {
+			index++; // The next field is the rename/copy source path.
+		}
+	}
+	return count;
 }
 
 function repositoryId(repoRoot: string): string {
@@ -32,7 +42,11 @@ function readHeadRecord(output: string): { hash: string; occurredAt: string; sum
 	if (!hash || !occurredAt || summary === undefined) {
 		return undefined;
 	}
-	return { hash, occurredAt, summary: summary || 'Commit with no subject' };
+	return { hash, occurredAt, summary: summary.trim() || 'Commit with no subject' };
+}
+
+function isUnbornHeadError(error: unknown): boolean {
+	return error instanceof Error && /does not have any commits yet/i.test(error.message);
 }
 
 /**
@@ -56,11 +70,16 @@ export async function collectProgressTimeline(
 
 	for (const repository of repositories) {
 		const id = repositoryId(repository.repoRoot);
-		const [headOutput, statusOutput] = await Promise.all([
-			runGit(repository.repoRoot, ['log', '-1', '--format=%H%x00%aI%x00%s']),
-			runGit(repository.repoRoot, ['status', '--porcelain=v1', '-z']),
-		]);
-		const head = readHeadRecord(headOutput);
+		let headOutput: string | undefined;
+		try {
+			headOutput = await runGit(repository.repoRoot, ['log', '-1', '--format=%H%x00%aI%x00%s']);
+		} catch (error) {
+			if (!isUnbornHeadError(error)) {
+				throw error;
+			}
+		}
+		const statusOutput = await runGit(repository.repoRoot, ['status', '--porcelain=v1', '-z']);
+		const head = headOutput ? readHeadRecord(headOutput) : undefined;
 		if (head) {
 			events.push({
 				id: `commit:${id}:${head.hash}`,

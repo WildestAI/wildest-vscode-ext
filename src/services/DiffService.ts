@@ -29,6 +29,12 @@ export type HtmlDiffTarget =
 	| { kind: 'working-tree'; staged: boolean }
 	| { kind: 'commit'; commitHash: string };
 
+export interface DiffGraphPerformanceSnapshot {
+	source: 'generation' | 'none';
+	/** CLI generation plus the handoff to the currently selected webview renderer. */
+	structuralDiffMs?: number;
+}
+
 /**
  * Builds the legacy HTML request explicitly so the extension does not depend on
  * the CLI's default output format while the JSON renderer migration is in progress.
@@ -83,6 +89,7 @@ export class DiffService {
 		cancellation: vscode.CancellationTokenSource;
 	}>();
 	private _nextDiffPresentationToken = 0;
+	private _lastPerformanceSnapshot: DiffGraphPerformanceSnapshot = { source: 'none' };
 
 	constructor(context: vscode.ExtensionContext, diffGraphViewProvider?: DiffGraphViewProvider) {
 		this._outputChannel = vscode.window.createOutputChannel('WildestAI');
@@ -120,6 +127,11 @@ export class DiffService {
 	 */
 	public async refreshStagedChanges(context: vscode.ExtensionContext, repoPath?: string): Promise<void> {
 		await this.refreshDiffView(context, true, repoPath);
+	}
+
+	/** Return the most recent completed uncached DiffGraph generation measurement. */
+	public getLastPerformanceSnapshot(): DiffGraphPerformanceSnapshot {
+		return { ...this._lastPerformanceSnapshot };
 	}
 
 	/**
@@ -434,6 +446,10 @@ export class DiffService {
 				if (!isCurrentGeneration()) {
 					return;
 				}
+				this._lastPerformanceSnapshot = {
+					source: 'generation',
+					structuralDiffMs: Date.now() - startTime,
+				};
 
 				this._notificationService.sendOperationComplete(
 					`${stage.charAt(0).toUpperCase() + stage.slice(1)} DiffGraph`,

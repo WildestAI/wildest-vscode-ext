@@ -99,6 +99,11 @@
         "category": "Wildest AI"
       },
       {
+        "command": "wildestai.showDiffGraphPerformanceDiagnostics",
+        "title": "Wildest AI: Show DiffGraph Performance",
+        "category": "Wildest AI"
+      },
+      {
         "command": "wildestai.showRuntimeDiagnostics",
         "title": "Wildest AI: Show Runtime Diagnostics",
         "category": "Wildest AI"

@@ -67,4 +67,17 @@ suite('DiffGraphViewProvider Test Suite', () => {
 			fs.rmSync(tempDir, { recursive: true, force: true });
 		}
 	});
+
+	test('does not report a handoff until its webview resolves', async () => {
+		const provider = new DiffGraphViewProvider(vscode.Uri.file('/mock/extension'));
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wildest-view-test-'));
+		const graphPath = path.join(tempDir, 'graph.html');
+		fs.writeFileSync(graphPath, '<html><body>graph</body></html>');
+
+		try {
+			assert.strictEqual(await provider.showDiffGraph(graphPath), false);
+		} finally {
+			fs.rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
 });

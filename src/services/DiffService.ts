@@ -406,7 +406,9 @@ export class DiffService {
 					? buildJsonDiffArgs(outputPath, target)
 					: buildHtmlDiffArgs(outputPath, target);
 				const cliCommand = CliService.setupCommand(args, context);
+				const cliStartTime = Date.now();
 				const { stdout, stderr } = await CliService.execute(cliCommand, repoRoot, progress, generationCancellation.token);
+				const cliGenerationMs = Date.now() - cliStartTime;
 
 				// Log output
 				const cmdString = `${cliCommand.executable} ${cliCommand.args.join(' ')}`;
@@ -442,13 +444,15 @@ export class DiffService {
 					return;
 				}
 				const isCurrentGeneration = () => this._latestDiffGenerationKeys.get(presentationKey) === generationKey;
-				await this.showWebviewWithContent(outputPath, stage, isCurrentGeneration);
-				if (!isCurrentGeneration()) {
+				const handoffStartTime = Date.now();
+				const didHandoff = await this.showWebviewWithContent(outputPath, stage, isCurrentGeneration);
+				const webviewHandoffMs = Date.now() - handoffStartTime;
+				if (!didHandoff || !isCurrentGeneration()) {
 					return;
 				}
 				this._lastPerformanceSnapshot = {
 					source: 'generation',
-					structuralDiffMs: Date.now() - startTime,
+					structuralDiffMs: cliGenerationMs + webviewHandoffMs,
 				};
 
 				this._notificationService.sendOperationComplete(
@@ -489,10 +493,10 @@ export class DiffService {
 		htmlFilePath: string,
 		stage: string,
 		isCurrent: () => boolean = () => true
-	): Promise<void> {
+	): Promise<boolean> {
 		if (!this._diffGraphViewProvider) {
 			vscode.window.showErrorMessage('DiffGraphView provider not available');
-			return;
+			return false;
 		}
 		// A successful replacement must have a renderable artifact. Do not replace a
 		// previously usable graph with a misleading "no changes" screen when the CLI
@@ -506,12 +510,11 @@ export class DiffService {
 			const rawArtifact = await fs.promises.readFile(htmlFilePath, 'utf8');
 			if (!isCurrent()) {
 				this._outputChannel.appendLine(`Skipping superseded ${stage} DiffGraph presentation`);
-				return;
+				return false;
 			}
-			await this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
-			return;
+			return this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
 		}
-		await this._diffGraphViewProvider.showDiffGraph(htmlFilePath);
+		return this._diffGraphViewProvider.showDiffGraph(htmlFilePath);
 	}
 
 	/**

@@ -162,6 +162,7 @@ export class AiProviderProfileService {
 		profile: AiProviderProfile,
 		secrets: vscode.SecretStorage,
 		request: ProviderRequest = this.requestModel,
+		credential?: string,
 	): Promise<AiProviderPreflight> {
 		if (profile.provider === 'disabled') {
 			return { status: 'disabled', detail: 'AI prose enrichment is disabled. Deterministic Git and DiffGraph workflows remain available.' };
@@ -175,10 +176,14 @@ export class AiProviderProfileService {
 		}
 		let key: string | undefined;
 		if (profile.authSource === 'secret-storage') {
-			try {
-				key = await secrets.get(this.secretKey(profile.provider));
-			} catch {
-				return { status: 'connection-failed', detail: `Could not read the ${profile.provider} API key from VS Code SecretStorage. Check the VS Code secret store, then try again.` };
+			if (credential !== undefined) {
+				key = credential;
+			} else {
+				try {
+					key = await secrets.get(this.secretKey(profile.provider));
+				} catch {
+					return { status: 'connection-failed', detail: `Could not read the ${profile.provider} API key from VS Code SecretStorage. Check the VS Code secret store, then try again.` };
+				}
 			}
 			if (!key || key.trim().length === 0) {
 				return { status: 'needs-configuration', detail: `No API key is stored for ${profile.provider}. Configure the provider, then test it again.` };

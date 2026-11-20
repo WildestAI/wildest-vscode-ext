@@ -268,7 +268,8 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 		await refreshRuntimeHealthStatus();
-		const preflight = await AiProviderProfileService.preflight(profile, context.secrets);
+		// Bind this automatic check to the credential entered by this setup run.
+		const preflight = await AiProviderProfileService.preflight(profile, context.secrets, undefined, apiKey);
 		const presentation = presentProviderPreflight(profile, preflight);
 		if (presentation.severity === 'info') {
 			void vscode.window.showInformationMessage(presentation.message);

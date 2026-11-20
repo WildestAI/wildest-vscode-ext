@@ -264,6 +264,25 @@ suite('AiProviderProfileService', () => {
 	});
 
 
+
+	test('uses the credential saved by this configuration run when a later run replaces the provider secret', async () => {
+		const profile = AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'https://first.example.com/v1', model: 'first-model', capabilities: ['prose'], authSource: 'secret-storage',
+		});
+		let secretRead = false;
+		let authorization = '';
+		const result = await AiProviderProfileService.preflight(profile, {
+			get: async () => { secretRead = true; return 'second-run-key'; },
+		} as any, async (_url, headers) => {
+			authorization = headers.authorization;
+			return 200;
+		}, 'first-run-key');
+
+		assert.strictEqual(result.status, 'ready');
+		assert.strictEqual(secretRead, false);
+		assert.strictEqual(authorization, 'Bearer first-run-key');
+	});
+
 	test('direct-provider preflight authenticates with the SecretStorage key without exposing it in the result', async () => {
 		for (const provider of ['openai', 'anthropic'] as const) {
 			const profile = AiProviderProfileService.normalize({

@@ -26,6 +26,7 @@ import { redactDiagnostics } from './utils/redactDiagnostics';
 import { presentRuntimeHealth } from './utils/runtimeHealthPresentation';
 import { getRuntimeHealthRemediation } from './utils/runtimeHealthRemediation';
 import { createRuntimeHealthRefreshGate } from './utils/runtimeHealthRefresh';
+import { presentProviderPreflight } from './utils/providerPreflightPresentation';
 import {
 	evaluateCachedGraphFirstPaintBudget,
 	evaluateCancellationAcknowledgementBudget,
@@ -267,9 +268,13 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 		await refreshRuntimeHealthStatus();
-		void vscode.window.showInformationMessage(provider === 'disabled'
-			? 'WildestAI optional AI prose is disabled. Deterministic workflows remain available.'
-			: `WildestAI optional AI prose is configured for ${provider}.`);
+		const preflight = await AiProviderProfileService.preflight(profile, context.secrets);
+		const presentation = presentProviderPreflight(profile, preflight);
+		if (presentation.severity === 'info') {
+			void vscode.window.showInformationMessage(presentation.message);
+		} else {
+			void vscode.window.showWarningMessage(presentation.message);
+		}
 	}));
 
 	const runtimeDiagnosticsOutput = vscode.window.createOutputChannel('WildestAI Diagnostics');

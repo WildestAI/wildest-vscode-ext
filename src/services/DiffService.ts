@@ -23,7 +23,7 @@ import { DiffGraphCache } from './DiffGraphCache';
 import { NotificationService } from './NotificationService';
 import { CliCommand } from '../utils/types';
 import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
-import { parseDiffGraphArtifact } from '../utils/diffGraphV2';
+import { DiffGraphContractError, parseDiffGraphArtifact } from '../utils/diffGraphV2';
 
 export type HtmlDiffTarget =
 	| { kind: 'working-tree'; staged: boolean }
@@ -512,7 +512,16 @@ export class DiffService {
 				this._outputChannel.appendLine(`Skipping superseded ${stage} DiffGraph presentation`);
 				return false;
 			}
-			return this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
+			try {
+				return this._diffGraphViewProvider.showDiffGraphArtifact(parseDiffGraphArtifact(rawArtifact));
+			} catch (error) {
+				// Do not replace the current graph with untrusted or incompatible JSON.
+				// The experimental renderer remains opt-in until the HTML fallback is retired.
+				if (error instanceof DiffGraphContractError) {
+					throw new Error(`The generated DiffGraph JSON is incompatible with this extension: ${error.message}. Update the WildestAI extension and bundled CLI, or turn off the experimental JSON renderer to use the legacy HTML fallback.`);
+				}
+				throw error;
+			}
 		}
 		return this._diffGraphViewProvider.showDiffGraph(htmlFilePath);
 	}

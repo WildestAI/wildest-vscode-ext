@@ -48,3 +48,20 @@ export function vsixListCommand(vsix, platform) {
   }
   return { executable: 'unzip', args: ['-Z1', vsix] };
 }
+
+/** Extract a VSIX without interpolating a potentially space-containing path into shell text. */
+export function vsixExtractCommand(vsix, destination, platform) {
+  if (platform === 'win32') {
+    return {
+      executable: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        'Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory($env:WILDESTAI_VSIX_PATH, $env:WILDESTAI_VSIX_EXTRACTED_PATH)',
+      ],
+      env: { WILDESTAI_VSIX_PATH: vsix, WILDESTAI_VSIX_EXTRACTED_PATH: destination },
+    };
+  }
+  return { executable: 'unzip', args: ['-qq', vsix, '-d', destination] };
+}

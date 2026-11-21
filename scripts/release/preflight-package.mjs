@@ -4,7 +4,7 @@ import { chmod, cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } fro
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { REQUIRED_ASSETS } from './release-contract.mjs';
-import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes, vsixListCommand } from './runtime-smoke-platform.mjs';
+import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes, vsixExtractCommand, vsixListCommand } from './runtime-smoke-platform.mjs';
 import { shouldCopyPreflightPath } from './preflight-workspace.mjs';
 
 const workspace = await mkdtemp(join(tmpdir(), 'wildestai-release-preflight-'));
@@ -41,12 +41,32 @@ try {
     if (!entries.split(/\r?\n/).includes(`extension/bin/${asset}`)) throw new Error(`VSIX is missing ${asset}`);
   }
   if (!entries.split(/\r?\n/).includes('extension/bin/SHA256SUMS')) throw new Error('VSIX is missing SHA256SUMS');
+
+  // Verify the manifest after packaging, not just before it. This catches a
+  // VSIX that carries every expected path but pairs a binary with a stale or
+  // altered checksum; the installed extension would otherwise fail closed at runtime.
+  const extracted = join(workspace, '.release-preflight', 'extracted');
+  const extractCommand = vsixExtractCommand(vsix, extracted, process.platform);
+  execFileSync(extractCommand.executable, extractCommand.args, {
+    env: { ...process.env, ...extractCommand.env },
+  });
+  const packagedChecksums = new Map((await readFile(join(extracted, 'extension', 'bin', 'SHA256SUMS'), 'utf8'))
+    .trim()
+    .split(/\r?\n/)
+    .map(line => {
+      const match = /^([a-fA-F0-9]{64}) [ *](.+)$/.exec(line);
+      if (!match) throw new Error(`VSIX contains an invalid checksum entry: ${line}`);
+      return [match[2], match[1].toLowerCase()];
+    }));
+  for (const asset of REQUIRED_ASSETS) {
+    const expected = packagedChecksums.get(asset);
+    const actual = createHash('sha256').update(await readFile(join(extracted, 'extension', 'bin', asset))).digest('hex');
+    if (!expected || expected !== actual) throw new Error(`VSIX checksum does not match packaged asset ${asset}`);
+  }
+
   // Windows does not use POSIX execute bits; its packaged `.exe` artifact is
-  // still covered by the required-path check above. Extract and validate Unix
-  // executable modes only where the release runtime relies on them.
+  // still covered by the required-path and checksum checks above.
   if (requiresUnixExecutableModes(process.platform)) {
-    const extracted = join(workspace, '.release-preflight', 'extracted');
-    execFileSync('unzip', ['-qq', vsix, '-d', extracted]);
     for (const asset of REQUIRED_ASSETS.filter(asset => !asset.endsWith('.exe'))) {
       const mode = (await stat(join(extracted, 'extension', 'bin', asset))).mode;
       if ((mode & 0o111) === 0) throw new Error(`VSIX does not preserve execute permission for ${asset}`);

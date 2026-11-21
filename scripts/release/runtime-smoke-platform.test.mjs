@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes, vsixListCommand } from './runtime-smoke-platform.mjs';
+import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes, vsixExtractCommand, vsixListCommand } from './runtime-smoke-platform.mjs';
 
 test('requires executable-mode validation for supported Unix release platforms', () => {
   assert.equal(requiresUnixExecutableModes('linux'), true);
@@ -43,5 +43,24 @@ test('uses unzip to list VSIX paths on Unix release platforms', () => {
   assert.deepEqual(vsixListCommand('/tmp/artifact.vsix', 'linux'), {
     executable: 'unzip',
     args: ['-Z1', '/tmp/artifact.vsix'],
+  });
+});
+
+test('extracts Windows VSIX paths through environment variables', () => {
+  const command = vsixExtractCommand('C:\\Users\\Example User\\artifact.vsix', 'C:\\Users\\Example User\\extracted', 'win32');
+  assert.equal(command.executable, 'powershell.exe');
+  assert.match(command.args[3], /Expand-Archive/);
+  assert.match(command.args[3], /WILDESTAI_VSIX_PATH/);
+  assert.match(command.args[3], /WILDESTAI_VSIX_EXTRACTED_PATH/);
+  assert.deepEqual(command.env, {
+    WILDESTAI_VSIX_PATH: 'C:\\Users\\Example User\\artifact.vsix',
+    WILDESTAI_VSIX_EXTRACTED_PATH: 'C:\\Users\\Example User\\extracted',
+  });
+});
+
+test('uses unzip to extract VSIX files on Unix release platforms', () => {
+  assert.deepEqual(vsixExtractCommand('/tmp/artifact.vsix', '/tmp/extracted', 'darwin'), {
+    executable: 'unzip',
+    args: ['-qq', '/tmp/artifact.vsix', '-d', '/tmp/extracted'],
   });
 });

@@ -15,6 +15,8 @@
 
 import * as assert from 'assert';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { buildHtmlDiffArgs, buildJsonDiffArgs, DiffService, matchesRendererArtifact } from '../services/DiffService';
 import { DiffGraphViewProvider } from '../providers/DiffGraphViewProvider';
@@ -83,6 +85,26 @@ suite('DiffService Test Suite', () => {
 			/DiffGraph output was not created/,
 		);
 		assert.match(generationError ?? '', /DiffGraph output was not created/);
+	});
+
+	test('rejects an incompatible JSON artifact with an actionable HTML fallback path', async () => {
+		let artifactRenderCount = 0;
+		const mockProvider = {
+			showDiffGraphArtifact: async () => { artifactRenderCount++; },
+		} as unknown as DiffGraphViewProvider;
+		const diffService = new DiffService(mockContext, mockProvider);
+		const sourcePath = path.resolve(__dirname, '../../src/test/fixtures/diffgraph-v2.structural.example.json');
+		const artifactPath = path.join(os.tmpdir(), `wildestai-incompatible-${Date.now()}.json`);
+		fs.writeFileSync(artifactPath, fs.readFileSync(sourcePath, 'utf8').replace('\"schema_version\": \"2.1\"', '\"schema_version\": \"3.0\"'));
+		try {
+			await assert.rejects(
+				() => (diffService as any).showWebviewWithContent(artifactPath, 'unstaged'),
+				/incompatible with this extension: Unsupported DiffGraph schema major 3.*turn off the experimental JSON renderer/i,
+			);
+			assert.strictEqual(artifactRenderCount, 0, 'an incompatible artifact must not replace the current graph');
+		} finally {
+			fs.rmSync(artifactPath, { force: true });
+		}
 	});
 
 	test('does not render a JSON artifact after its generation loses ownership', async () => {

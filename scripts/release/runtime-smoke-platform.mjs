@@ -58,7 +58,7 @@ export function vsixExtractCommand(vsix, destination, platform) {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        'Expand-Archive -LiteralPath $env:WILDESTAI_VSIX_PATH -DestinationPath $env:WILDESTAI_VSIX_EXTRACTED_PATH -Force',
+        'Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory($env:WILDESTAI_VSIX_PATH, $env:WILDESTAI_VSIX_EXTRACTED_PATH)',
       ],
       env: { WILDESTAI_VSIX_PATH: vsix, WILDESTAI_VSIX_EXTRACTED_PATH: destination },
     };

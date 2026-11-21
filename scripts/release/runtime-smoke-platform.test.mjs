@@ -49,7 +49,7 @@ test('uses unzip to list VSIX paths on Unix release platforms', () => {
 test('extracts Windows VSIX paths through environment variables', () => {
   const command = vsixExtractCommand('C:\\Users\\Example User\\artifact.vsix', 'C:\\Users\\Example User\\extracted', 'win32');
   assert.equal(command.executable, 'powershell.exe');
-  assert.match(command.args[3], /Expand-Archive/);
+  assert.match(command.args[3], /ZipFile]::ExtractToDirectory/);
   assert.match(command.args[3], /WILDESTAI_VSIX_PATH/);
   assert.match(command.args[3], /WILDESTAI_VSIX_EXTRACTED_PATH/);
   assert.deepEqual(command.env, {

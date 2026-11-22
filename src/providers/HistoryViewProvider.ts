@@ -34,6 +34,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 	private readonly _repositoryGenerations = new Map<string, number>();
 	private _refreshPromise?: Promise<void>;
 	private _refreshCancellation?: vscode.CancellationTokenSource;
+	private _scheduledRetryTimer?: ReturnType<typeof setTimeout>;
 	private _activeForceRefresh = false;
 	private _pendingForceRefresh = false;
 	// This records what is already visible, independently of the short-lived
@@ -108,6 +109,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 
 	/** Cancel in-flight history work that can no longer update the visible view. */
 	public cancelRefresh(): void {
+		this.cancelScheduledRetry();
 		const cancellation = this._refreshCancellation;
 		if (!cancellation || cancellation.token.isCancellationRequested) {
 			return;
@@ -137,6 +139,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			clearTimeout(timer);
 		}
 		this._repositoryRefreshTimers.clear();
+		this.cancelScheduledRetry();
 		this._cachedGraphPaints.clear();
 		this._cancelledPerformanceSnapshots.clear();
 		this.cancelRefresh();
@@ -301,7 +304,7 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 					}
 					if (error instanceof Error && error.message.includes('Timeout waiting for Git')) {
 						// If we hit a timeout, schedule another refresh attempt.
-						setTimeout(() => void this.refresh(forceRefresh), 2000);
+						this.scheduleRefreshRetry(forceRefresh);
 					} else {
 						throw error;
 					}
@@ -310,6 +313,29 @@ export class HistoryViewProvider implements vscode.WebviewViewProvider {
 			} while (forceRefresh);
 		} finally {
 			this.recordCancellationAcknowledgement(cancellationToken);
+		}
+	}
+
+	/** Retry a timed-out read only while the view remains live and visible. */
+	private scheduleRefreshRetry(forceRefresh: boolean): void {
+		this.cancelScheduledRetry();
+		const retryTimer = setTimeout(() => {
+			if (this._scheduledRetryTimer !== retryTimer) {
+				return;
+			}
+			this._scheduledRetryTimer = undefined;
+			if (!this._isDisposed && this._view?.visible) {
+				void this.refresh(forceRefresh);
+			}
+		}, 2000);
+		this._scheduledRetryTimer = retryTimer;
+	}
+
+	/** A hidden or disposed view must not revive a stale timeout retry. */
+	private cancelScheduledRetry(): void {
+		if (this._scheduledRetryTimer) {
+			clearTimeout(this._scheduledRetryTimer);
+			this._scheduledRetryTimer = undefined;
 		}
 	}
 

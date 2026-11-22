@@ -492,15 +492,18 @@ suite('HistoryViewProvider cache policy', () => {
 		const originalSetTimeout = global.setTimeout;
 		let scheduledCallback: (() => void) | undefined;
 		let scheduledDelay: number | undefined;
+		(provider as any)._view.visible = true;
 		global.setTimeout = ((callback: () => void, delay?: number) => {
 			scheduledCallback = callback;
 			scheduledDelay = delay;
-			return {} as NodeJS.Timeout;
+			return originalSetTimeout(() => undefined, 0) as NodeJS.Timeout;
 		}) as typeof global.setTimeout;
 
 		try {
 			await provider.refresh(true);
 			assert.ok(scheduledCallback);
+			// Let refresh clear its in-flight promise before invoking the queued retry.
+			await new Promise(resolve => setImmediate(resolve));
 			scheduledCallback();
 			await retryCompleted;
 		} finally {
@@ -509,5 +512,30 @@ suite('HistoryViewProvider cache policy', () => {
 
 		assert.strictEqual(executeCalls, 2);
 		assert.strictEqual(scheduledDelay, 2000);
+	});
+
+	test('cancels a scheduled timeout retry when the view is no longer active', async () => {
+		GitService.runGit = async () => {
+			executeCalls++;
+			throw new Error('Timeout waiting for Git');
+		};
+		const originalSetTimeout = global.setTimeout;
+		let scheduledCallback: (() => void) | undefined;
+		global.setTimeout = ((callback: () => void) => {
+			scheduledCallback = callback;
+			return originalSetTimeout(() => undefined, 0) as NodeJS.Timeout;
+		}) as typeof global.setTimeout;
+		(provider as any)._view.visible = true;
+
+		try {
+			await provider.refresh(true);
+			provider.cancelRefresh();
+			scheduledCallback?.();
+			await new Promise(resolve => setImmediate(resolve));
+		} finally {
+			global.setTimeout = originalSetTimeout;
+		}
+
+		assert.strictEqual(executeCalls, 1, 'a cancelled retry must not start another Git command');
 	});
 });

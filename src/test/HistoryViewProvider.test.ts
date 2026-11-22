@@ -492,15 +492,18 @@ suite('HistoryViewProvider cache policy', () => {
 		const originalSetTimeout = global.setTimeout;
 		let scheduledCallback: (() => void) | undefined;
 		let scheduledDelay: number | undefined;
+		(provider as any)._view.visible = true;
 		global.setTimeout = ((callback: () => void, delay?: number) => {
 			scheduledCallback = callback;
 			scheduledDelay = delay;
-			return {} as NodeJS.Timeout;
+			return originalSetTimeout(() => undefined, 0) as NodeJS.Timeout;
 		}) as typeof global.setTimeout;
 
 		try {
 			await provider.refresh(true);
 			assert.ok(scheduledCallback);
+			// Let refresh clear its in-flight promise before invoking the queued retry.
+			await new Promise(resolve => setImmediate(resolve));
 			scheduledCallback();
 			await retryCompleted;
 		} finally {
@@ -520,7 +523,7 @@ suite('HistoryViewProvider cache policy', () => {
 		let scheduledCallback: (() => void) | undefined;
 		global.setTimeout = ((callback: () => void) => {
 			scheduledCallback = callback;
-			return {} as NodeJS.Timeout;
+			return originalSetTimeout(() => undefined, 0) as NodeJS.Timeout;
 		}) as typeof global.setTimeout;
 		(provider as any)._view.visible = true;
 

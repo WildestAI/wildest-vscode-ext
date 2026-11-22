@@ -510,4 +510,29 @@ suite('HistoryViewProvider cache policy', () => {
 		assert.strictEqual(executeCalls, 2);
 		assert.strictEqual(scheduledDelay, 2000);
 	});
+
+	test('cancels a scheduled timeout retry when the view is no longer active', async () => {
+		GitService.runGit = async () => {
+			executeCalls++;
+			throw new Error('Timeout waiting for Git');
+		};
+		const originalSetTimeout = global.setTimeout;
+		let scheduledCallback: (() => void) | undefined;
+		global.setTimeout = ((callback: () => void) => {
+			scheduledCallback = callback;
+			return {} as NodeJS.Timeout;
+		}) as typeof global.setTimeout;
+		(provider as any)._view.visible = true;
+
+		try {
+			await provider.refresh(true);
+			provider.cancelRefresh();
+			scheduledCallback?.();
+			await new Promise(resolve => setImmediate(resolve));
+		} finally {
+			global.setTimeout = originalSetTimeout;
+		}
+
+		assert.strictEqual(executeCalls, 1, 'a cancelled retry must not start another Git command');
+	});
 });

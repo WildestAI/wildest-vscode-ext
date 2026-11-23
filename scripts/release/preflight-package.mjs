@@ -4,7 +4,7 @@ import { chmod, cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } fro
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { REQUIRED_ASSETS } from './release-contract.mjs';
-import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes, vsixExtractCommand, vsixListCommand } from './runtime-smoke-platform.mjs';
+import { npmArgument, npmExecutable, npmExecutionOptions, parseRequiredAssetChecksums, requiresUnixExecutableModes, vsixExtractCommand, vsixListCommand } from './runtime-smoke-platform.mjs';
 import { shouldCopyPreflightPath } from './preflight-workspace.mjs';
 
 const workspace = await mkdtemp(join(tmpdir(), 'wildestai-release-preflight-'));
@@ -50,14 +50,10 @@ try {
   execFileSync(extractCommand.executable, extractCommand.args, {
     env: { ...process.env, ...extractCommand.env },
   });
-  const packagedChecksums = new Map((await readFile(join(extracted, 'extension', 'bin', 'SHA256SUMS'), 'utf8'))
-    .trim()
-    .split(/\r?\n/)
-    .map(line => {
-      const match = /^([a-fA-F0-9]{64}) [ *](.+)$/.exec(line);
-      if (!match) throw new Error(`VSIX contains an invalid checksum entry: ${line}`);
-      return [match[2], match[1].toLowerCase()];
-    }));
+  const packagedChecksums = parseRequiredAssetChecksums(
+    await readFile(join(extracted, 'extension', 'bin', 'SHA256SUMS'), 'utf8'),
+    REQUIRED_ASSETS,
+  );
   for (const asset of REQUIRED_ASSETS) {
     const expected = packagedChecksums.get(asset);
     const actual = createHash('sha256').update(await readFile(join(extracted, 'extension', 'bin', asset))).digest('hex');

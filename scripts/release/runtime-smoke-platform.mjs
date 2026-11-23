@@ -65,3 +65,25 @@ export function vsixExtractCommand(vsix, destination, platform) {
   }
   return { executable: 'unzip', args: ['-qq', vsix, '-d', destination] };
 }
+
+/**
+ * Parse a packaged CLI checksum manifest and require one valid digest for each
+ * expected asset. Duplicate or untracked entries make the packaged artifact
+ * ambiguous, so fail the preflight before it can reach users.
+ */
+export function parseRequiredAssetChecksums(manifest, requiredAssets) {
+  const expectedAssets = new Set(requiredAssets);
+  const checksums = new Map();
+  for (const line of manifest.trim().split(/\r?\n/)) {
+    const match = /^([a-fA-F0-9]{64}) [ *](.+)$/.exec(line);
+    if (!match) throw new Error(`VSIX contains an invalid checksum entry: ${line}`);
+    const asset = match[2];
+    if (!expectedAssets.has(asset)) throw new Error(`VSIX checksum manifest contains an unexpected asset: ${asset}`);
+    if (checksums.has(asset)) throw new Error(`VSIX checksum manifest contains a duplicate asset: ${asset}`);
+    checksums.set(asset, match[1].toLowerCase());
+  }
+  for (const asset of requiredAssets) {
+    if (!checksums.has(asset)) throw new Error(`VSIX checksum manifest is missing required asset: ${asset}`);
+  }
+  return checksums;
+}

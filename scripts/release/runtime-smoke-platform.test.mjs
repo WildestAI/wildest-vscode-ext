@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { npmArgument, npmExecutable, npmExecutionOptions, requiresUnixExecutableModes, vsixExtractCommand, vsixListCommand } from './runtime-smoke-platform.mjs';
+import { npmArgument, npmExecutable, npmExecutionOptions, parseRequiredAssetChecksums, requiresUnixExecutableModes, vsixExtractCommand, vsixListCommand } from './runtime-smoke-platform.mjs';
 
 test('requires executable-mode validation for supported Unix release platforms', () => {
   assert.equal(requiresUnixExecutableModes('linux'), true);
@@ -63,4 +63,27 @@ test('uses unzip to extract VSIX files on Unix release platforms', () => {
     executable: 'unzip',
     args: ['-qq', '/tmp/artifact.vsix', '-d', '/tmp/extracted'],
   });
+});
+
+
+test('requires an unambiguous checksum manifest for every packaged runtime asset', () => {
+  const assets = ['wild-linux-x64', 'wild-win-x64.exe'];
+  const linuxDigest = 'a'.repeat(64);
+  const windowsDigest = 'b'.repeat(64);
+  assert.deepEqual(
+    parseRequiredAssetChecksums(`${linuxDigest}  wild-linux-x64\n${windowsDigest} *wild-win-x64.exe\n`, assets),
+    new Map([['wild-linux-x64', linuxDigest], ['wild-win-x64.exe', windowsDigest]]),
+  );
+  assert.throws(
+    () => parseRequiredAssetChecksums(`${linuxDigest}  wild-linux-x64\n${windowsDigest}  wild-linux-x64\n`, assets),
+    /duplicate asset: wild-linux-x64/,
+  );
+  assert.throws(
+    () => parseRequiredAssetChecksums(`${linuxDigest}  wild-linux-x64\n${windowsDigest}  unexpected-binary\n`, assets),
+    /unexpected asset: unexpected-binary/,
+  );
+  assert.throws(
+    () => parseRequiredAssetChecksums(`${linuxDigest}  wild-linux-x64\n`, assets),
+    /missing required asset: wild-win-x64\.exe/,
+  );
 });

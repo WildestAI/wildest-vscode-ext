@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/release*.yml'
       - '.vscodeignore'
+      - 'bin/**'
       - 'package.json'
       - 'package-lock.json'
       - 'release-inputs/**'
@@ -34,6 +35,7 @@ jobs:
           npm run test:release-candidate-state
           npm run test:release-candidate-pr-recovery
           npm run test:release-handoff-workflow
+          npm run test:release-preflight-workflow
       - name: Validate the documented CLI release-input contract
         run: npm run verify:release-input
       - name: Build a clean-checkout VSIX with contract placeholders

@@ -16,8 +16,19 @@ const workflowPath = join(
 test('runs the packaged-runtime smoke matrix when a bundled CLI binary changes', async () => {
   const workflow = await readFile(workflowPath, 'utf8');
 
-  assert.match(workflow, /^\s*- 'bin\/\*\*'$/m);
-  assert.match(workflow, /packaged-runtime-smoke:/);
-  assert.match(workflow, /os: \[ubuntu-latest, macos-latest, windows-latest\]/);
-  assert.match(workflow, /npm run package:preflight/);
+  const pullRequestPaths = workflow.match(
+    /^  pull_request:\n    paths:\n(?<paths>(?:      - .+\n)+)/m,
+  );
+  assert.ok(pullRequestPaths?.groups?.paths, 'pull_request.paths is configured');
+  assert.match(pullRequestPaths.groups.paths, /^      - 'bin\/\*\*'$/m);
+
+  const packagedRuntimeSmoke = workflow.match(
+    /^  packaged-runtime-smoke:\n(?<job>[\s\S]*?)(?=^  [a-zA-Z0-9_-]+:\n|(?![\s\S]))/m,
+  );
+  assert.ok(packagedRuntimeSmoke?.groups?.job, 'packaged-runtime-smoke job is configured');
+  assert.match(
+    packagedRuntimeSmoke.groups.job,
+    /^        os: \[ubuntu-latest, macos-latest, windows-latest\]$/m,
+  );
+  assert.match(packagedRuntimeSmoke.groups.job, /^        run: npm run package:preflight$/m);
 });

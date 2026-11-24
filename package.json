@@ -242,7 +242,8 @@
     "publish:openvsx": "ovsx publish",
     "verify:cli-contract": "npm run compile-tests && node scripts/release/verify-cli-contract.mjs",
     "sync:cli-contract": "node scripts/release/sync-cli-contract.mjs",
-    "test:cli-contract-sync": "node --test scripts/release/sync-cli-contract.test.mjs"
+    "test:cli-contract-sync": "node --test scripts/release/sync-cli-contract.test.mjs",
+    "test:release-preflight-workflow": "node --test scripts/release/release-preflight-workflow.test.mjs"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

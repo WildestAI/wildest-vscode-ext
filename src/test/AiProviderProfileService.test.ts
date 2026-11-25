@@ -74,6 +74,9 @@ suite('AiProviderProfileService', () => {
 		assert.throws(() => AiProviderProfileService.normalize({
 			provider: 'openai', capabilities: ['prose'], authSource: 'none',
 		}), /loopback endpoints/);
+		assert.throws(() => AiProviderProfileService.normalize({
+			provider: 'openai-compatible', baseUrl: 'http://127.999.0.1:11434/v1', model: 'local-model', capabilities: ['prose'], authSource: 'none',
+		}), /baseUrl must be an http\(s\) URL/);
 	});
 
 	test('preflights credential-free local endpoints without a SecretStorage lookup or authorization header', async () => {

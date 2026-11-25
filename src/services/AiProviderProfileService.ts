@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as http from 'node:http';
 import * as https from 'node:https';
+import { isIP } from 'node:net';
 
 export const AI_PROVIDER_IDS = ['disabled', 'openai', 'anthropic', 'openai-compatible'] as const;
 export type AiProviderId = typeof AI_PROVIDER_IDS[number];
@@ -248,7 +249,10 @@ export class AiProviderProfileService {
 	}
 
 	private static isLoopbackHost(hostname: string): boolean {
-		return hostname === 'localhost' || hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+		if (hostname === 'localhost' || hostname === '[::1]') {
+			return true;
+		}
+		return isIP(hostname) === 4 && hostname.split('.', 1)[0] === '127';
 	}
 
 	private static requestModel(url: URL, headers: Record<string, string>): Promise<number> {

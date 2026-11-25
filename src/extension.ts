@@ -26,6 +26,7 @@ import { redactDiagnostics } from './utils/redactDiagnostics';
 import { presentRuntimeHealth } from './utils/runtimeHealthPresentation';
 import { getRuntimeHealthRemediation } from './utils/runtimeHealthRemediation';
 import { createRuntimeHealthRefreshGate } from './utils/runtimeHealthRefresh';
+import { presentRuntimeHealthRecheck } from './utils/runtimeHealthRecheckPresentation';
 import { presentProviderPreflight } from './utils/providerPreflightPresentation';
 import {
 	evaluateCachedGraphFirstPaintBudget,
@@ -346,7 +347,16 @@ export function activate(context: vscode.ExtensionContext) {
 	}));
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.recheckRuntimeHealth', async () => {
 		const runtimeReport = await refreshRuntimeHealthStatus(true);
-		void vscode.window.showInformationMessage('WildestAI runtime health was rechecked.');
+		const presentation = presentRuntimeHealthRecheck(
+			runtimeReport.diagnostics,
+			runtimeReport.probe,
+			runtimeReport.providerReadiness,
+		);
+		if (presentation.severity === 'warning') {
+			void vscode.window.showWarningMessage(redactDiagnostics(presentation.message));
+		} else {
+			void vscode.window.showInformationMessage(presentation.message);
+		}
 		return runtimeReport;
 	}));
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.copyRuntimeDiagnostics', async () => {

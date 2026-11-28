@@ -6,6 +6,7 @@ suite('redactDiagnostics', () => {
 		const detail = [
 			'Authorization: Bearer token-value-123',
 			'Authorization: Bearer "quoted-token-value-456"',
+			'Authorization: Basic dXNlcjpwYXNzd29yZA==',
 			'OPENAI_API_KEY=sk-secret_value-123456',
 			'"apiKey": "json-secret-value-789". Remediation: update the API key, then retry.',
 			'https://alice:password@example.test/v1',
@@ -16,13 +17,14 @@ suite('redactDiagnostics', () => {
 
 		assert.ok(!redacted.includes('token-value-123'));
 		assert.ok(!redacted.includes('quoted-token-value-456'));
+		assert.ok(!redacted.includes('dXNlcjpwYXNzd29yZA=='));
 		assert.ok(!redacted.includes('sk-secret_value-123456'));
 		assert.ok(!redacted.includes('json-secret-value-789'));
 		assert.ok(!redacted.includes('alice:password'));
 		assert.ok(!redacted.includes('another-secret'));
 		assert.match(
 			redacted,
-			/Authorization: \[REDACTED\]\nAuthorization: \[REDACTED\]/,
+			/Authorization: \[REDACTED\]\nAuthorization: \[REDACTED\]\nAuthorization: \[REDACTED\]/,
 		);
 		assert.match(redacted, /OPENAI_API_KEY=\[REDACTED\]/);
 		assert.match(

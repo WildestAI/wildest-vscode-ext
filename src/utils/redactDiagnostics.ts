@@ -16,7 +16,7 @@ export function redactDiagnostics(value: string): string {
 			'$1[REDACTED]:[REDACTED]@',
 		)
 		.replace(
-			/\b(authorization\s*:\s*)(?:Bearer\s+)?(?:"[^"]*"|'[^']*'|[^\s,"'}\]]+)/gi,
+			/\b(authorization\s*:\s*)(?:(?:Bearer|Basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s,"'}\]]+)/gi,
 			'$1[REDACTED]',
 		)
 		.replace(

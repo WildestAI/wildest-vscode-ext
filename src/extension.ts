@@ -24,6 +24,7 @@ import { AiProviderId, AiProviderProfile, AiProviderProfileService } from './ser
 import { formatRuntimeDiagnosticsReport } from './utils/runtimeDiagnosticsReport';
 import { redactDiagnostics } from './utils/redactDiagnostics';
 import { presentRuntimeHealth } from './utils/runtimeHealthPresentation';
+import { presentRuntimeHealthFailure } from './utils/runtimeHealthFailurePresentation';
 import { getRuntimeHealthRemediation } from './utils/runtimeHealthRemediation';
 import { createRuntimeHealthRefreshGate } from './utils/runtimeHealthRefresh';
 import { presentRuntimeHealthRecheck } from './utils/runtimeHealthRecheckPresentation';
@@ -290,9 +291,24 @@ export function activate(context: vscode.ExtensionContext) {
 	const runtimeHealthRefreshGate = createRuntimeHealthRefreshGate();
 	const refreshRuntimeHealthStatus = async (refreshDiagnosticsOutput = false) => {
 		const isCurrentRefresh = runtimeHealthRefreshGate.start();
-		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
+		let runtimeReport: Awaited<ReturnType<typeof buildRuntimeDiagnosticsReport>>;
+		try {
+			runtimeReport = await buildRuntimeDiagnosticsReport(context);
+		} catch (error) {
+			if (!isCurrentRefresh()) {
+				return { kind: 'superseded' } as const;
+			}
+			const failure = presentRuntimeHealthFailure(error);
+			runtimeHealthStatus.text = failure.text;
+			runtimeHealthStatus.tooltip = failure.tooltip;
+			if (refreshDiagnosticsOutput) {
+				runtimeDiagnosticsOutput.clear();
+				runtimeDiagnosticsOutput.appendLine(failure.diagnostics);
+			}
+			return { kind: 'failed' } as const;
+		}
 		if (!isCurrentRefresh()) {
-			return runtimeReport;
+			return { kind: 'superseded' } as const;
 		}
 		runtimeHealthStatus.text = presentRuntimeHealth(
 			runtimeReport.diagnostics,
@@ -304,7 +320,7 @@ export function activate(context: vscode.ExtensionContext) {
 			runtimeDiagnosticsOutput.clear();
 			runtimeDiagnosticsOutput.appendLine(runtimeReport.report);
 		}
-		return runtimeReport;
+		return { kind: 'report', report: runtimeReport } as const;
 	};
 	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
 		if (event.affectsConfiguration('wildestai.ai.providerProfile')) {
@@ -313,7 +329,16 @@ export function activate(context: vscode.ExtensionContext) {
 	}));
 	void refreshRuntimeHealthStatus();
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.showRuntimeDiagnostics', async () => {
-		const runtimeReport = await buildRuntimeDiagnosticsReport(context);
+		let runtimeReport: Awaited<ReturnType<typeof buildRuntimeDiagnosticsReport>>;
+		try {
+			runtimeReport = await buildRuntimeDiagnosticsReport(context);
+		} catch (error) {
+			const failure = presentRuntimeHealthFailure(error);
+			runtimeDiagnosticsOutput.clear();
+			runtimeDiagnosticsOutput.appendLine(failure.diagnostics);
+			runtimeDiagnosticsOutput.show(true);
+			return;
+		}
 		runtimeDiagnosticsOutput.clear();
 		runtimeDiagnosticsOutput.appendLine(runtimeReport.report);
 		runtimeDiagnosticsOutput.show(true);
@@ -346,7 +371,15 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}));
 	context.subscriptions.push(vscode.commands.registerCommand('wildestai.recheckRuntimeHealth', async () => {
-		const runtimeReport = await refreshRuntimeHealthStatus(true);
+		const refresh = await refreshRuntimeHealthStatus(true);
+		if (refresh.kind === 'superseded') {
+			return;
+		}
+		if (refresh.kind === 'failed') {
+			void vscode.window.showWarningMessage('WildestAI could not complete the runtime health check. Open Runtime Diagnostics for redacted details.');
+			return;
+		}
+		const runtimeReport = refresh.report;
 		const presentation = presentRuntimeHealthRecheck(
 			runtimeReport.diagnostics,
 			runtimeReport.probe,
